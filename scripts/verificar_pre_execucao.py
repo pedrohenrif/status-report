@@ -44,7 +44,7 @@ def main() -> None:
     # ------------------------------------------------------------------
     # 1. Fila de clientes (Sheets API)
     # ------------------------------------------------------------------
-    print("1. FILA DE CLIENTES (Sheets API)")
+    print("1. CADASTRO DE CLIENTES (aba Clientes)")
     try:
         clientes = buscar_clientes_do_dia(
             sheets=servicos.sheets,
@@ -54,14 +54,16 @@ def main() -> None:
         if clientes:
             print(f"{OK} {len(clientes)} cliente(s) na fila para hoje:")
             for c in clientes:
-                print(f"     - {c.nome_curto} | coordenadora: {c.coordenadora}")
+                print(f"     - {c.nome_curto}")
                 print(f"       ID completo : {c.cliente_id_completo}")
                 print(f"       Nome do PDF : {c.nome_arquivo_pdf(data_ref)}")
         else:
             print(f"{AVISO} Nenhum cliente na fila para hoje ({_dia_semana(data_ref)}).")
+            print("       Verifique a aba Clientes (ativo + dias_semana).")
             print("       Use --force-run para testar com qualquer data.")
     except Exception as e:
-        print(f"{ERRO} Falha ao ler fila: {e}")
+        print(f"{ERRO} Falha ao ler aba Clientes: {e}")
+        print("       Crie a aba 'Clientes' conforme README (GOOGLE_CLIENTS_RANGE).")
         clientes = []
     print()
 

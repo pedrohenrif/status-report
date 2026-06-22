@@ -1,19 +1,6 @@
-"""Servico responsavel por descobrir quais clientes processar no dia.
+"""Servico responsavel por descobrir quais clientes processar no dia (modo CLI).
 
-A fonte de verdade e a aba `Fila_StatusReport`. O layout esperado e:
-
-| Col | Campo                  | Exemplo                                    |
-|-----|------------------------|--------------------------------------------|
-| A   | nome_curto             | "131 - Honorp"                             |
-| B   | ativo                  | "TRUE"                                     |
-| C   | dias_semana            | "SEG,TER,QUA,QUI,SEX"                      |
-| D   | coordenadora           | "Pedro Furtado"                            |
-| E   | cliente_id_completo    | "131-ID: 0078-25 HONORP - SUPCON"          |
-| F   | nome_pdf_customizado   | (opcional, sobrescreve o nome padrao)      |
-| G   | email                  | "pedro@ghr.com.br"                         |
-
-Linhas com `ativo` falso ou cujo dia da semana nao bate com a data de
-referencia sao ignoradas.
+A fila vem da aba `Clientes`, filtrada por `ativo` e `dias_semana`.
 """
 from __future__ import annotations
 
@@ -21,8 +8,11 @@ from datetime import date
 
 from status_report.configuracao import Configuracoes
 from status_report.dominio.modelos import ClienteFila
+from status_report.infraestrutura.repositorio_clientes import (
+    _eh_verdadeiro,
+    cliente_da_linha,
+)
 from status_report.infraestrutura.repositorio_planilha import ler_intervalo
-
 
 _DIAS_DA_SEMANA = {
     0: "SEG",
@@ -34,8 +24,6 @@ _DIAS_DA_SEMANA = {
     6: "DOM",
 }
 
-_VALORES_VERDADEIROS = {"1", "true", "verdadeiro", "sim", "ativo", "yes", "y"}
-
 
 def buscar_clientes_do_dia(
     sheets,
@@ -45,44 +33,35 @@ def buscar_clientes_do_dia(
     linhas = ler_intervalo(
         sheets=sheets,
         spreadsheet_id=configuracoes.id_planilha_principal,
-        intervalo=configuracoes.intervalo_fila_clientes,
+        intervalo=configuracoes.intervalo_cadastro_clientes,
     )
     token_dia = _DIAS_DA_SEMANA[data_referencia.weekday()]
 
     clientes: list[ClienteFila] = []
     for linha in linhas:
-        cliente = _converter_linha(linha, configuracoes.id_planilha_principal)
-        if cliente is None:
+        if not _eh_verdadeiro(_celula(linha, 4)):
+            continue
+        cad = cliente_da_linha(linha)
+        if cad is None:
             continue
         dias_permitidos = _ler_dias_permitidos(linha)
         if dias_permitidos and token_dia not in dias_permitidos:
             continue
-        clientes.append(cliente)
+        clientes.append(
+            ClienteFila(
+                nome_curto=cad.nome_curto,
+                cliente_id_completo=cad.cliente_id_completo,
+                coordenadora="-",
+                spreadsheet_origem_id=configuracoes.id_planilha_principal,
+                nome_pdf_customizado=cad.nome_pdf_customizado,
+                email_coordenadora="",
+            )
+        )
     return clientes
 
 
-def _converter_linha(linha: list[str], id_planilha_padrao: str) -> ClienteFila | None:
-    nome_curto = _celula(linha, 0)
-    if not nome_curto:
-        return None
-    if not _eh_verdadeiro(_celula(linha, 1)):
-        return None
-    coordenadora = _celula(linha, 3) or "-"
-    cliente_id_completo = _celula(linha, 4) or nome_curto
-    nome_pdf_customizado = _celula(linha, 5)
-    email_coordenadora = _celula(linha, 6)
-    return ClienteFila(
-        nome_curto=nome_curto,
-        cliente_id_completo=cliente_id_completo,
-        coordenadora=coordenadora,
-        spreadsheet_origem_id=id_planilha_padrao,
-        nome_pdf_customizado=nome_pdf_customizado,
-        email_coordenadora=email_coordenadora,
-    )
-
-
 def _ler_dias_permitidos(linha: list[str]) -> set[str]:
-    bruto = _celula(linha, 2).upper()
+    bruto = _celula(linha, 5).upper()
     return {token.strip() for token in bruto.split(",") if token.strip()}
 
 
@@ -90,7 +69,3 @@ def _celula(linha: list[str], idx: int) -> str:
     if idx >= len(linha) or linha[idx] is None:
         return ""
     return str(linha[idx]).strip()
-
-
-def _eh_verdadeiro(valor: str) -> bool:
-    return valor.lower() in _VALORES_VERDADEIROS

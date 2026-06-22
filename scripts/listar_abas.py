@@ -27,18 +27,20 @@ def main() -> None:
         props = aba["properties"]
         print(f"{i:<4} {props['title']:<50} {props['sheetId']}")
 
-    print(f"\nIntervalo configurado em .env: {config.intervalo_fila_clientes}")
-    nome_aba_configurada = config.intervalo_fila_clientes.split("!")[0]
+    intervalos = [
+        ("Coord_Status_Report", config.intervalo_coordenadoras),
+        ("Clientes", config.intervalo_cadastro_clientes),
+        ("Projetos_Funcionais", config.intervalo_indice_projetos),
+    ]
     nomes_existentes = [a["properties"]["title"] for a in abas]
-    if nome_aba_configurada in nomes_existentes:
-        print(f"  OK - Aba '{nome_aba_configurada}' encontrada.")
-    else:
-        print(f"  PROBLEMA - Aba '{nome_aba_configurada}' NAO encontrada na planilha.")
-        print(f"\n  Abas disponiveis: {nomes_existentes}")
-        print(
-            f"\n  Para corrigir, atualize GOOGLE_CLIENT_QUEUE_RANGE no .env para usar"
-            f" o nome correto da aba, ou crie a aba '{nome_aba_configurada}' na planilha."
-        )
+    for rotulo, intervalo in intervalos:
+        nome_aba = intervalo.split("!")[0]
+        print(f"\nIntervalo {rotulo}: {intervalo}")
+        if nome_aba in nomes_existentes:
+            print(f"  OK - Aba '{nome_aba}' encontrada.")
+        else:
+            print(f"  PROBLEMA - Aba '{nome_aba}' NAO encontrada na planilha.")
+            print(f"  Abas disponiveis: {nomes_existentes}")
 
 
 if __name__ == "__main__":

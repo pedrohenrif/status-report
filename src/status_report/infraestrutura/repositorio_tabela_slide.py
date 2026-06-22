@@ -12,12 +12,21 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-# Dimensoes em EMU (1 polegada = 914400 EMU). Slide widescreen padrao = 10 x 5.63".
+# Dimensoes em EMU (1 polegada = 914400 EMU). Slide widescreen padrao = 10 x 5.625".
 _POL = 914400
-_TABELA_X = int(0.25 * _POL)
-_TABELA_Y = int(1.30 * _POL)
-_TABELA_LARGURA = int(9.50 * _POL)
-_TABELA_ALTURA = int(4.10 * _POL)
+_LARGURA_SLIDE_POLEGADAS = 10.0
+_TABELA_LARGURA_POLEGADAS = 9.70
+_TABELA_X = int((_LARGURA_SLIDE_POLEGADAS - _TABELA_LARGURA_POLEGADAS) / 2 * _POL)
+_TABELA_Y = int(1.60 * _POL)  # titulo reduzido no template
+_TABELA_LARGURA = int(_TABELA_LARGURA_POLEGADAS * _POL)
+_ALTURA_SLIDE_POLEGADAS = 5.625
+_MARGEM_INFERIOR_POLEGADAS = 0.38  # espaco para numero de pagina do template
+_ALTURA_CABECALHO_POLEGADAS = 0.28
+_FONTE_CABECALHO_PT = 8.0
+_FONTE_DADOS_PT = 7.5
+
+# Minimo exigido pela Slides API: 32 pt (~0,444 polegadas).
+_LARGURA_MINIMA_POLEGADAS = 406400 / _POL
 
 # Cores (rgb 0..1)
 COR_CABECALHO = {"red": 0.102, "green": 0.235, "blue": 0.431}  # azul GHR
@@ -51,6 +60,8 @@ def requests_estrutura(planta: PlantaTabela) -> list[dict]:
 
     n_linhas = len(planta.linhas) + 1  # +1 cabecalho
     n_colunas = len(planta.cabecalhos)
+    altura_tabela = _calcular_altura_tabela(len(planta.linhas))
+    altura_linha_dados = _altura_linha_dados(len(planta.linhas), altura_tabela)
 
     requests.append(
         {
@@ -60,7 +71,7 @@ def requests_estrutura(planta: PlantaTabela) -> list[dict]:
                     "pageObjectId": planta.slide_object_id,
                     "size": {
                         "width": {"magnitude": _TABELA_LARGURA, "unit": "EMU"},
-                        "height": {"magnitude": _TABELA_ALTURA, "unit": "EMU"},
+                        "height": {"magnitude": int(altura_tabela * _POL), "unit": "EMU"},
                     },
                     "transform": {
                         "scaleX": 1,
@@ -77,6 +88,7 @@ def requests_estrutura(planta: PlantaTabela) -> list[dict]:
     )
 
     for indice, largura in enumerate(planta.larguras_polegadas):
+        largura_segura = max(largura, _LARGURA_MINIMA_POLEGADAS)
         requests.append(
             {
                 "updateTableColumnProperties": {
@@ -84,13 +96,31 @@ def requests_estrutura(planta: PlantaTabela) -> list[dict]:
                     "columnIndices": [indice],
                     "tableColumnProperties": {
                         "columnWidth": {
-                            "magnitude": int(largura * _POL),
+                            "magnitude": int(largura_segura * _POL),
                             "unit": "EMU",
                         }
                     },
                     "fields": "columnWidth",
                 }
             }
+        )
+
+    requests.extend(
+        _altura_linha(
+            planta.table_object_id,
+            linha_inicio=0,
+            linha_fim=1,
+            altura_polegadas=_ALTURA_CABECALHO_POLEGADAS,
+        )
+    )
+    if len(planta.linhas) > 0:
+        requests.extend(
+            _altura_linha(
+                planta.table_object_id,
+                linha_inicio=1,
+                linha_fim=n_linhas,
+                altura_polegadas=altura_linha_dados,
+            )
         )
 
     return requests
@@ -101,6 +131,24 @@ def requests_conteudo(planta: PlantaTabela) -> list[dict]:
     requests: list[dict] = []
     table_id = planta.table_object_id
     n_colunas = len(planta.cabecalhos)
+
+    n_linhas = len(planta.linhas) + 1
+
+    # Alinhamento vertical centralizado em toda a tabela.
+    requests.append(
+        {
+            "updateTableCellProperties": {
+                "objectId": table_id,
+                "tableRange": {
+                    "location": {"rowIndex": 0, "columnIndex": 0},
+                    "rowSpan": n_linhas,
+                    "columnSpan": n_colunas,
+                },
+                "tableCellProperties": {"contentAlignment": "MIDDLE"},
+                "fields": "contentAlignment",
+            }
+        }
+    )
 
     # Fundo do cabecalho.
     requests.append(_fundo_celula(table_id, 0, 0, 1, n_colunas, COR_CABECALHO))
@@ -116,7 +164,9 @@ def requests_conteudo(planta: PlantaTabela) -> list[dict]:
     for coluna, titulo in enumerate(planta.cabecalhos):
         requests.append(_inserir_texto(table_id, 0, coluna, titulo))
         requests.append(
-            _estilo_texto(table_id, 0, coluna, COR_BRANCO, negrito=True, tamanho=8.5)
+            _estilo_texto(
+                table_id, 0, coluna, COR_BRANCO, negrito=True, tamanho=_FONTE_CABECALHO_PT
+            )
         )
 
     # Linhas de dados.
@@ -137,11 +187,54 @@ def requests_conteudo(planta: PlantaTabela) -> list[dict]:
                     coluna,
                     cor,
                     negrito=eh_status,
-                    tamanho=7.5,
+                    tamanho=_FONTE_DADOS_PT,
                 )
             )
 
     return requests
+
+
+def _calcular_altura_tabela(n_linhas_dados: int) -> float:
+    """Calcula altura da tabela para caber todas as linhas sem cortar."""
+    y_polegadas = _TABELA_Y / _POL
+    altura_max = (
+        _ALTURA_SLIDE_POLEGADAS - y_polegadas - _MARGEM_INFERIOR_POLEGADAS
+    )
+    altura_minima = _ALTURA_CABECALHO_POLEGADAS + max(n_linhas_dados, 1) * 0.24
+    return min(altura_max, altura_minima)
+
+
+def _altura_linha_dados(n_linhas_dados: int, altura_tabela: float) -> float:
+    if n_linhas_dados <= 0:
+        return 0.24
+    restante = altura_tabela - _ALTURA_CABECALHO_POLEGADAS
+    return max(restante / n_linhas_dados, 0.22)
+
+
+def _altura_linha(
+    table_id: str,
+    linha_inicio: int,
+    linha_fim: int,
+    altura_polegadas: float,
+) -> list[dict]:
+    """Define minRowHeight para o intervalo [linha_inicio, linha_fim)."""
+    if linha_inicio >= linha_fim:
+        return []
+    return [
+        {
+            "updateTableRowProperties": {
+                "objectId": table_id,
+                "rowIndices": list(range(linha_inicio, linha_fim)),
+                "tableRowProperties": {
+                    "minRowHeight": {
+                        "magnitude": int(altura_polegadas * _POL),
+                        "unit": "EMU",
+                    }
+                },
+                "fields": "minRowHeight",
+            }
+        }
+    ]
 
 
 def _indice_status(cabecalhos: list[str]) -> int:

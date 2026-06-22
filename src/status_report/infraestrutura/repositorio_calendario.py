@@ -50,3 +50,14 @@ def extrair_codigo_cliente(titulo_evento: str) -> str | None:
     sem_prefixo = _PREFIXO_STATUS_REPORT.sub("", titulo_evento).strip()
     match = re.match(r"^(\d+)", sem_prefixo)
     return match.group(1) if match else None
+
+
+def extrair_cliente_id_do_evento(titulo_evento: str) -> str | None:
+    """Extrai o identificador completo do cliente a partir do titulo do evento.
+
+    Exemplo:
+        "Status report-131-ID: 0078-25-HONORP SUPCON" -> "131-ID: 0078-25-HONORP SUPCON"
+    """
+    sem_prefixo = _PREFIXO_STATUS_REPORT.sub("", titulo_evento).strip()
+    identificador = sem_prefixo.lstrip("-").strip()
+    return identificador or None

@@ -20,7 +20,8 @@ class Configuracoes:
     id_planilha_principal: str
     id_apresentacao_modelo: str
     id_pasta_saida: str
-    intervalo_fila_clientes: str
+    intervalo_coordenadoras: str
+    intervalo_cadastro_clientes: str
     intervalo_dados_relatorio: str
     intervalo_indice_projetos: str
     fuso_horario: str
@@ -44,8 +45,12 @@ def carregar_configuracoes() -> Configuracoes:
         id_planilha_principal=_obrigatoria("GOOGLE_SPREADSHEET_ID"),
         id_apresentacao_modelo=_obrigatoria("GOOGLE_TEMPLATE_PRESENTATION_ID"),
         id_pasta_saida=_obrigatoria("GOOGLE_OUTPUT_FOLDER_ID"),
-        intervalo_fila_clientes=os.getenv(
-            "GOOGLE_CLIENT_QUEUE_RANGE", "Fila_StatusReport!A2:F"
+        intervalo_coordenadoras=os.getenv(
+            "GOOGLE_COORD_RANGE",
+            os.getenv("GOOGLE_CLIENT_QUEUE_RANGE", "Coord_Status_Report!A2:C"),
+        ),
+        intervalo_cadastro_clientes=os.getenv(
+            "GOOGLE_CLIENTS_RANGE", "Clientes!A2:F"
         ),
         intervalo_dados_relatorio=os.getenv(
             "GOOGLE_DATA_RANGE", "Agenda da Semana!A1:G200"

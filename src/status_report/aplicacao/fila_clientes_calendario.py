@@ -1,26 +1,23 @@
 """Servico para buscar clientes da coordenadora via planilha + Google Calendar.
 
 Fluxo:
-1. Le a aba Fila_StatusReport e filtra as linhas da coordenadora informada.
-2. Extrai o email da coordenadora dessas linhas.
-3. Le o calendario da coordenadora no dia e filtra eventos de Status Report.
-4. Cruza os eventos com os clientes da planilha pelo codigo numerico.
+1. Le a aba Coord_Status_Report (somente dados da coordenadora).
+2. Le o calendario da coordenadora no dia e filtra eventos de Status Report.
+3. Cruza os eventos com a aba Clientes pelo codigo numerico.
+4. Usa o titulo do evento como fonte do ID completo na capa do slide.
 """
 from __future__ import annotations
 
-import re
-from datetime import date
-
-from status_report.aplicacao.fila_clientes import (
-    _celula,
-    _converter_linha,
-    _eh_verdadeiro,
-)
 from status_report.configuracao import Configuracoes
 from status_report.dominio.modelos import ClienteFila
 from status_report.infraestrutura.repositorio_calendario import (
-    buscar_eventos_status_report,
+    extrair_cliente_id_do_evento,
     extrair_codigo_cliente,
+)
+from status_report.infraestrutura.repositorio_clientes import (
+    _eh_verdadeiro,
+    carregar_cadastro_clientes,
+    indice_por_codigo,
 )
 from status_report.infraestrutura.repositorio_planilha import ler_intervalo
 
@@ -39,8 +36,8 @@ def buscar_coordenadora_na_planilha(
     sheets,
     configuracoes: Configuracoes,
     nome_coordenadora: str,
-) -> tuple[str, list[ClienteFila]]:
-    """Retorna (email_coordenadora, lista_de_clientes_ativos).
+) -> tuple[str, str]:
+    """Retorna (email, nome_coordenadora).
 
     Raises:
         CoordinadoraNaoEncontrada: se o nome nao for localizado na planilha.
@@ -48,16 +45,15 @@ def buscar_coordenadora_na_planilha(
     linhas = ler_intervalo(
         sheets=sheets,
         spreadsheet_id=configuracoes.id_planilha_principal,
-        intervalo=configuracoes.intervalo_fila_clientes,
+        intervalo=configuracoes.intervalo_coordenadoras,
     )
 
     nome_normalizado = nome_coordenadora.strip().lower()
     todos_nomes: set[str] = set()
-    clientes: list[ClienteFila] = []
     email_encontrado = ""
 
     for linha in linhas:
-        nome_col = _celula(linha, 3)
+        nome_col = _celula(linha, 0)
         if nome_col:
             todos_nomes.add(nome_col)
 
@@ -65,46 +61,61 @@ def buscar_coordenadora_na_planilha(
             continue
         if not _eh_verdadeiro(_celula(linha, 1)):
             continue
+        email_encontrado = _celula(linha, 2)
 
-        cliente = _converter_linha(linha, configuracoes.id_planilha_principal)
-        if cliente:
-            clientes.append(cliente)
-            if not email_encontrado:
-                email_encontrado = _celula(linha, 6)
-
-    if not clientes:
+    if not email_encontrado:
         nomes_lista = sorted(n for n in todos_nomes if n)
         similares = _sugerir_similares(nome_normalizado, nomes_lista)
         raise CoordinadoraNaoEncontrada(nome_coordenadora, nomes_lista, similares)
 
-    return email_encontrado, clientes
+    return email_encontrado, nome_coordenadora.strip()
 
 
-def filtrar_clientes_por_eventos(
-    clientes: list[ClienteFila],
+def montar_clientes_dos_eventos(
+    sheets,
+    configuracoes: Configuracoes,
     titulos_eventos: list[str],
+    nome_coordenadora: str,
+    email_coordenadora: str,
 ) -> list[ClienteFila]:
-    """Retorna apenas os clientes que possuem evento no calendario do dia."""
-    codigos_eventos: set[str] = set()
-    for titulo in titulos_eventos:
-        codigo = extrair_codigo_cliente(titulo)
-        if codigo:
-            codigos_eventos.add(codigo)
-
-    if not codigos_eventos:
-        return []
+    """Monta ClienteFila a partir dos eventos do calendario + aba Clientes."""
+    cadastro = indice_por_codigo(
+        carregar_cadastro_clientes(sheets, configuracoes, apenas_ativos=True)
+    )
 
     resultado: list[ClienteFila] = []
-    for cliente in clientes:
-        match = re.match(r"^(\d+)", cliente.nome_curto)
-        if match and match.group(1) in codigos_eventos:
-            resultado.append(cliente)
+    for titulo in titulos_eventos:
+        codigo = extrair_codigo_cliente(titulo)
+        if not codigo:
+            continue
+        registro = cadastro.get(codigo)
+        if registro is None:
+            continue
+
+        cliente_id_evento = extrair_cliente_id_do_evento(titulo)
+        cliente_id_completo = cliente_id_evento or registro.cliente_id_completo
+
+        resultado.append(
+            ClienteFila(
+                nome_curto=registro.nome_curto,
+                cliente_id_completo=cliente_id_completo,
+                coordenadora=nome_coordenadora,
+                spreadsheet_origem_id=configuracoes.id_planilha_principal,
+                nome_pdf_customizado=registro.nome_pdf_customizado,
+                email_coordenadora=email_coordenadora,
+            )
+        )
 
     return resultado
 
 
+def _celula(linha: list[str], idx: int) -> str:
+    if idx >= len(linha) or linha[idx] is None:
+        return ""
+    return str(linha[idx]).strip()
+
+
 def _sugerir_similares(nome_buscado: str, nomes_existentes: list[str]) -> list[str]:
-    """Retorna nomes parecidos para sugerir ao usuario."""
     partes = set(nome_buscado.split())
     return [
         nome

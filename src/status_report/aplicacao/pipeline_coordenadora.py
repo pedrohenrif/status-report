@@ -1,9 +1,9 @@
 """Pipeline de geracao de Status Report acionado pela coordenadora via GUI.
 
 Fluxo:
-1. Busca o email e clientes da coordenadora na planilha.
+1. Busca email da coordenadora na aba Coord_Status_Report.
 2. Le o Google Calendar da coordenadora no dia informado.
-3. Filtra eventos de Status Report e cruza com os clientes da planilha.
+3. Cruza eventos com a aba Clientes (ID completo vem do titulo do evento).
 4. Processa cada cliente encontrado.
 """
 from __future__ import annotations
@@ -14,7 +14,7 @@ from typing import Callable
 from status_report.aplicacao.fila_clientes_calendario import (
     CoordinadoraNaoEncontrada,
     buscar_coordenadora_na_planilha,
-    filtrar_clientes_por_eventos,
+    montar_clientes_dos_eventos,
 )
 from status_report.aplicacao.pipeline_diario import _processar_cliente
 from status_report.configuracao import Configuracoes
@@ -45,7 +45,7 @@ def executar_pipeline_coordenadora(
     # 1. Busca coordenadora na planilha
     _log(log_fn, f"Buscando '{nome_coordenadora}' na planilha...")
     try:
-        email_coordenadora, todos_clientes = buscar_coordenadora_na_planilha(
+        email_coordenadora, nome_coord = buscar_coordenadora_na_planilha(
             sheets=servicos.sheets,
             configuracoes=config,
             nome_coordenadora=nome_coordenadora,
@@ -60,12 +60,7 @@ def executar_pipeline_coordenadora(
                 _log(log_fn, f"Nomes cadastrados: {', '.join(e.nomes_disponiveis)}", "aviso")
         return []
 
-    if not email_coordenadora:
-        _log(log_fn, "Email da coordenadora nao encontrado. Verifique a coluna 'email' na planilha.", "erro")
-        return []
-
-    _log(log_fn, f"Coordenadora encontrada: {nome_coordenadora} <{email_coordenadora}>", "ok")
-    _log(log_fn, f"{len(todos_clientes)} cliente(s) ativo(s) na planilha para esta coordenadora.")
+    _log(log_fn, f"Coordenadora encontrada: {nome_coord} <{email_coordenadora}>", "ok")
 
     # 2. Le o calendario
     _log(log_fn, f"\nBuscando eventos em {data_referencia.strftime('%d/%m/%Y')} no calendario...")
@@ -90,17 +85,23 @@ def executar_pipeline_coordenadora(
     for titulo in titulos_eventos:
         _log(log_fn, f"  • {titulo}")
 
-    # 3. Cruza eventos com clientes da planilha
-    clientes = filtrar_clientes_por_eventos(todos_clientes, titulos_eventos)
+    # 3. Cruza eventos com cadastro de clientes
+    clientes = montar_clientes_dos_eventos(
+        sheets=servicos.sheets,
+        configuracoes=config,
+        titulos_eventos=titulos_eventos,
+        nome_coordenadora=nome_coord,
+        email_coordenadora=email_coordenadora,
+    )
 
     if not clientes:
-        _log(log_fn, "\nNenhum cliente da planilha correspondeu aos eventos do calendario.", "aviso")
-        _log(log_fn, "Verifique se o titulo do evento comeca com o codigo numerico do cliente (ex: 'Status report-131-...').", "aviso")
+        _log(log_fn, "\nNenhum cliente cadastrado correspondeu aos eventos do calendario.", "aviso")
+        _log(log_fn, "Verifique a aba Clientes e se o codigo numerico do evento (ex: 131) esta cadastrado.", "aviso")
         return []
 
     _log(log_fn, f"\n{len(clientes)} cliente(s) para processar:")
     for c in clientes:
-        _log(log_fn, f"  • {c.nome_curto}")
+        _log(log_fn, f"  • {c.nome_curto} — {c.cliente_id_completo}")
 
     # 4. Processa cada cliente
     resultados: list[ResultadoExecucao] = []

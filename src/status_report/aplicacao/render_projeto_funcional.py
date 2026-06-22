@@ -35,9 +35,10 @@ _CABECALHOS = [
     "Prioridade",
     "Status",
 ]
-_LARGURAS = [0.4, 0.9, 1.0, 1.7, 1.3, 2.55, 0.8, 0.85]
+# #, Data, Modulo, Funcao, Analista, Descricao, Prioridade, Status
+_LARGURAS = [0.45, 0.80, 0.88, 1.28, 1.00, 3.05, 0.72, 0.92]
 
-_LIMITE_DESCRICAO = 140
+_LIMITE_DESCRICAO = 90
 
 # indice do slide (0-based) por categoria
 INDICES_SLIDES = {

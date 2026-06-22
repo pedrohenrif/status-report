@@ -25,7 +25,7 @@ Coordenadora abre a GUI
     ↓
 Informa nome + data
     ↓
-Busca coordenadora na aba Coord_Status_Report (email, clientes)
+Busca coordenadora na aba Coord_Status_Report (email)
     ↓
 Lê Google Calendar da coordenadora no dia
     ↓
@@ -33,7 +33,7 @@ Filtra eventos que começam com "Status report"
     ↓
 Extrai código do cliente do título do evento
     ↓
-Cruza com clientes cadastrados na planilha
+Cruza com aba Clientes + usa ID completo do título do evento na capa
     ↓
 Para cada cliente encontrado:
     ├── Copia template do Slides para pasta de saída (subpasta com data)
@@ -51,7 +51,7 @@ poetry run python -m status_report.main
     ↓
 Valida dia útil (seg–sex), salvo --force-run
     ↓
-Lê aba Coord_Status_Report filtrando por dia da semana + ativo
+Lê aba Clientes filtrando por dia da semana + ativo
     ↓
 Processa cada cliente da fila (mesmo pipeline de geração)
 ```
@@ -62,7 +62,7 @@ Processa cada cliente da fila (mesmo pipeline de geração)
 Status report-131-ID: 0078-25-HONORP SUPCON
 ```
 
-O sistema extrai o código numérico do cliente (`131`) e cruza com a coluna `nome_curto` na planilha (ex.: `131 - GHR`).
+O sistema extrai o código numérico do cliente (`131`) e cruza com a aba `Clientes`. O **ID completo na capa** (`{{CLIENTE_ID}}`) vem do **título do evento**, não da planilha de coordenadoras.
 
 ---
 
@@ -83,6 +83,7 @@ src/status_report/
 │   ├── repositorio_calendario.py# Eventos de Status Report no Calendar
 │   ├── repositorio_drive.py     # Cópia, subpastas, links no Drive
 │   ├── repositorio_apresentacao.py # replaceAllText no Slides
+│   ├── repositorio_clientes.py  # Aba Clientes (cadastro centralizado)
 │   ├── repositorio_indice_projetos.py # Aba Projetos_Funcionais (projeto → link)
 │   ├── repositorio_projeto_funcional.py # Leitura da planilha PF (Sheets ou Excel)
 │   └── repositorio_tabela_slide.py  # Criação/estilização de tabelas no Slides
@@ -115,24 +116,36 @@ Controle central com as abas abaixo.
 
 #### Aba `Coord_Status_Report`
 
-Cadastro de coordenadoras e clientes. Usada pela GUI e pelo CLI.
+Cadastro **somente de coordenadoras**. Usada pela GUI para obter e-mail e validar se a coord está ativa.
 
 | Coluna | Campo | Exemplo |
 |--------|-------|---------|
-| A | nome_curto | `131 - GHR` |
+| A | coordenadora | `Jordana` |
 | B | ativo | `TRUE` |
-| C | dias_semana | `SEG,TER,QUA,QUI` (vazio = todo dia útil) |
-| D | coordenadora | `Jordana Silva` |
-| E | cliente_id_completo | `131-ID: 0078-25 GHR - SUPCON` |
-| F | nome_pdf_customizado | (opcional) |
-| G | email | `jordana@ghr.com.br` |
+| C | email | `jordana@ghr.com.br` |
+
+Intervalo configurado: `GOOGLE_COORD_RANGE=Coord_Status_Report!A2:C`
+
+#### Aba `Clientes`
+
+Cadastro centralizado de clientes. Usada pelo CLI (fila do dia) e pela GUI (cruzamento com Calendar).
+
+| Coluna | Campo | Exemplo |
+|--------|-------|---------|
+| A | codigo_cliente | `131` |
+| B | nome_curto | `131 - HONORP` |
+| C | cliente_id_completo | `131-ID: 0078-25 HONORP - SUPCON` |
+| D | nome_pdf_customizado | (opcional) |
+| E | ativo | `TRUE` |
+| F | dias_semana | `SEG,TER,QUA,QUI` (vazio = todo dia útil; usado no CLI) |
 
 **Regras:**
 - `ativo = FALSE` ignora a linha.
 - `nome_pdf_customizado` vazio → `Status Report - <nome_curto> - <data>`.
-- O **código do projeto** (ex.: `0078-25`) é extraído de `cliente_id_completo` para buscar a planilha de Projeto Funcional.
+- Na **GUI**, o `{{CLIENTE_ID}}` da capa vem do **título do evento** no Calendar (ex.: `131-ID: 0078-25-HONORP SUPCON`).
+- O **código do projeto** (ex.: `0078-25`) é extraído do ID (evento ou coluna C) para buscar a planilha de Projeto Funcional.
 
-Intervalo configurado: `GOOGLE_CLIENT_QUEUE_RANGE=Coord_Status_Report!A2:G`
+Intervalo configurado: `GOOGLE_CLIENTS_RANGE=Clientes!A2:F`
 
 #### Aba `Projetos_Funcionais`
 
@@ -199,7 +212,7 @@ Exemplos reais: `50-CONCLUÍDO`, `20-EM ANDAMENTO`, `10-PENDENTE`.
 
 | Slide | Placeholders | Origem |
 |-------|-------------|--------|
-| 1 — Capa | `{{CLIENTE_ID}}`, `{{COORDENADORA}}`, `{{DATA}}` | `Coord_Status_Report` |
+| 1 — Capa | `{{CLIENTE_ID}}`, `{{COORDENADORA}}`, `{{DATA}}` | Evento Calendar + `Coord_Status_Report` |
 | 17 — Fechamento | `{{EMAIL_COORDENADORA}}`, `{{DATA}}` | `Coord_Status_Report` |
 
 ### Slides com tabelas dinâmicas (Projeto Funcional)
@@ -283,7 +296,8 @@ https://www.googleapis.com/auth/calendar.readonly
 | `GOOGLE_SPREADSHEET_ID` | Planilha principal (`Controle_Super_Indice`) |
 | `GOOGLE_TEMPLATE_PRESENTATION_ID` | ID do template no Google Slides |
 | `GOOGLE_OUTPUT_FOLDER_ID` | Pasta de saída no Drive (Shared Drive) |
-| `GOOGLE_CLIENT_QUEUE_RANGE` | Intervalo da aba `Coord_Status_Report` |
+| `GOOGLE_COORD_RANGE` | Intervalo da aba `Coord_Status_Report` |
+| `GOOGLE_CLIENTS_RANGE` | Intervalo da aba `Clientes` |
 | `GOOGLE_DATA_RANGE` | Intervalo da aba `Agenda da Semana` |
 | `GOOGLE_PROJECTS_INDEX_RANGE` | Intervalo da aba `Projetos_Funcionais` |
 | `TIMEZONE` | Fuso horário (padrão: `America/Sao_Paulo`) |
