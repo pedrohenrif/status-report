@@ -356,6 +356,7 @@ poetry run python -m status_report.main --date 2026-05-14
 | `scripts/inspecionar_indice_projetos.py` | Mostra conteúdo da aba `Projetos_Funcionais` |
 | `scripts/inspecionar_template.py` | Lista slides e elementos do template |
 | `scripts/testar_projeto_funcional.py` | Testa leitura + filtragem da planilha PF |
+| `scripts/preparar_slides_pf.py` | Limpa slides 6/7/8 e insere tabelas de exemplo para preparar o template |
 | `scripts/testar_slides_projeto.py` | Testa só a renderização das tabelas (gera cópia) |
 | `scripts/diagnosticar_template.py` | Testa acesso e cópia do template |
 | `scripts/mostrar_client_id.py` | Exibe Client ID para configurar DWD |
@@ -365,6 +366,7 @@ Exemplos:
 ```bash
 poetry run python scripts/verificar_pre_execucao.py
 poetry run python scripts/testar_projeto_funcional.py
+poetry run python scripts/preparar_slides_pf.py
 poetry run python scripts/testar_slides_projeto.py
 poetry run python scripts/inspecionar_indice_projetos.py
 ```

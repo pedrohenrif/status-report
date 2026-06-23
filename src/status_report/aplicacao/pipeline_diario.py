@@ -20,6 +20,7 @@ from status_report.aplicacao.fila_clientes import buscar_clientes_do_dia
 from status_report.aplicacao.projeto_funcional import agrupar_por_status
 from status_report.aplicacao.render_projeto_funcional import (
     renderizar_tabelas_projeto_funcional,
+    substituicoes_quantidade_projeto_funcional,
 )
 from status_report.aplicacao.renderizacao_relatorio import (
     coletar_substituicoes_de_todos,
@@ -28,6 +29,7 @@ from status_report.configuracao import Configuracoes
 from status_report.dominio.modelos import (
     ClienteFila,
     DadosRelatorio,
+    ProjetoFuncionalAgrupado,
     ResultadoExecucao,
 )
 from status_report.infraestrutura.autenticacao_google import (
@@ -155,20 +157,25 @@ def _processar_cliente(
         id_pasta_destino=id_subpasta,
     )
     try:
-        substituicoes.update(
-            _renderizar_projeto_funcional(
-                configuracoes=configuracoes,
-                servicos=servicos,
-                cliente=cliente,
-                id_copia=id_copia,
-                log_fn=log_fn,
-            )
+        grupos = _carregar_grupos_projeto_funcional(
+            configuracoes=configuracoes,
+            servicos=servicos,
+            cliente=cliente,
+            log_fn=log_fn,
         )
+        if grupos is not None:
+            substituicoes.update(substituicoes_quantidade_projeto_funcional(grupos))
         aplicar_substituicoes(
             slides=servicos.slides,
             id_apresentacao=id_copia,
             substituicoes=substituicoes,
         )
+        if grupos is not None:
+            renderizar_tabelas_projeto_funcional(
+                slides=servicos.slides,
+                presentation_id=id_copia,
+                grupos=grupos,
+            )
         link_arquivo = obter_link_arquivo(drive=servicos.drive, id_arquivo=id_copia)
     except Exception:
         remover_arquivo(drive=servicos.drive, id_arquivo=id_copia)
@@ -182,17 +189,13 @@ def _processar_cliente(
     )
 
 
-def _renderizar_projeto_funcional(
+def _carregar_grupos_projeto_funcional(
     configuracoes: Configuracoes,
     servicos: ServicosGoogle,
     cliente: ClienteFila,
-    id_copia: str,
     log_fn: LogFn,
-) -> dict[str, str]:
-    """Monta as tabelas de Projeto Funcional. Falhas aqui nao abortam o slide.
-
-    Retorna as substituicoes de quantidade dos titulos (vazio em caso de erro).
-    """
+) -> ProjetoFuncionalAgrupado | None:
+    """Le e agrupa itens do Projeto Funcional. Falhas retornam None."""
     codigo_projeto = extrair_codigo_projeto(cliente.cliente_id_completo)
     if not codigo_projeto:
         log_fn(
@@ -200,7 +203,7 @@ def _renderizar_projeto_funcional(
             f"'{cliente.cliente_id_completo}'. Tabelas nao geradas.",
             "aviso",
         )
-        return {}
+        return None
 
     try:
         link = buscar_link_por_codigo_projeto(
@@ -220,18 +223,14 @@ def _renderizar_projeto_funcional(
             f"{grupos.total_pendentes} pendentes.",
             "info",
         )
-        return renderizar_tabelas_projeto_funcional(
-            slides=servicos.slides,
-            presentation_id=id_copia,
-            grupos=grupos,
-        )
+        return grupos
     except ProjetoNaoEncontradoNoIndice:
         log_fn(
             f"Aviso: projeto {codigo_projeto} nao esta na aba Projetos_Funcionais. "
             "Tabelas nao geradas.",
             "aviso",
         )
-        return {}
+        return None
     except Exception as erro:
         log_fn(f"Aviso: falha ao montar tabelas do Projeto Funcional: {erro}", "aviso")
-        return {}
+        return None

@@ -15,6 +15,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 from status_report.aplicacao.projeto_funcional import agrupar_por_status
 from status_report.aplicacao.render_projeto_funcional import (
     renderizar_tabelas_projeto_funcional,
+    substituicoes_quantidade_projeto_funcional,
 )
 from status_report.configuracao import carregar_configuracoes
 from status_report.infraestrutura.autenticacao_google import (
@@ -65,16 +66,18 @@ def main() -> None:
         id_pasta_destino=id_subpasta,
     )
 
-    print("Montando tabelas nos slides 6/7/8...")
-    substituicoes_qtd = renderizar_tabelas_projeto_funcional(
-        slides=servicos.slides,
-        presentation_id=id_copia,
-        grupos=grupos,
-    )
+    print("Aplicando quantidades nos titulos...")
     aplicar_substituicoes(
         slides=servicos.slides,
         id_apresentacao=id_copia,
-        substituicoes=substituicoes_qtd,
+        substituicoes=substituicoes_quantidade_projeto_funcional(grupos),
+    )
+
+    print("Montando tabelas nos slides 6/7/8...")
+    renderizar_tabelas_projeto_funcional(
+        slides=servicos.slides,
+        presentation_id=id_copia,
+        grupos=grupos,
     )
 
     link = obter_link_arquivo(drive=servicos.drive, id_arquivo=id_copia)
