@@ -38,7 +38,9 @@ def main() -> int:
         rotulo = "OK" if resultado.sucesso else "ERRO"
         print(f"[{rotulo}] {resultado.cliente} | {resultado.mensagem}")
         if resultado.url_pdf:
-            print(f"      PDF: {resultado.url_pdf}")
+            print(f"      Link: {resultado.url_pdf}")
+        for caminho in resultado.caminhos_locais:
+            print(f"      Local: {caminho}")
         if not resultado.sucesso:
             houve_erro = True
 

@@ -7,7 +7,7 @@ Responsabilidades:
 3. Para cada cliente:
    - copiar template no Drive,
    - aplicar substituicoes de todos os renderizadores ativos,
-   - exportar para PDF e publicar na pasta final,
+   - publicar copia no Drive e salvar .pptx localmente (opcional),
    - opcionalmente remover a copia temporaria do Slides.
 """
 from __future__ import annotations
@@ -40,6 +40,7 @@ from status_report.infraestrutura.repositorio_apresentacao import (
     aplicar_substituicoes,
 )
 from status_report.infraestrutura.repositorio_drive import (
+    baixar_apresentacoes_locais,
     copiar_apresentacao,
     criar_ou_obter_subpasta,
     obter_link_arquivo,
@@ -177,6 +178,14 @@ def _processar_cliente(
                 grupos=grupos,
             )
         link_arquivo = obter_link_arquivo(drive=servicos.drive, id_arquivo=id_copia)
+        caminhos_locais = _salvar_download_local(
+            configuracoes=configuracoes,
+            servicos=servicos,
+            id_copia=id_copia,
+            data_referencia=data_referencia,
+            nome_arquivo=nome_arquivo,
+            log_fn=log_fn,
+        )
     except Exception:
         remover_arquivo(drive=servicos.drive, id_arquivo=id_copia)
         raise
@@ -186,7 +195,33 @@ def _processar_cliente(
         sucesso=True,
         url_pdf=link_arquivo,
         mensagem="Apresentacao publicada com sucesso.",
+        caminhos_locais=caminhos_locais,
     )
+
+
+def _salvar_download_local(
+    configuracoes: Configuracoes,
+    servicos: ServicosGoogle,
+    id_copia: str,
+    data_referencia: date,
+    nome_arquivo: str,
+    log_fn: LogFn,
+) -> list[str]:
+    if not configuracoes.salvar_download_local:
+        return []
+    salvos, avisos = baixar_apresentacoes_locais(
+        drive=servicos.drive,
+        id_apresentacao=id_copia,
+        pasta_base=configuracoes.pasta_download_local_resolvida(),
+        data_referencia=data_referencia,
+        nome_arquivo=nome_arquivo,
+    )
+    for caminho in salvos:
+        rotulo = "PDF" if caminho.suffix.lower() == ".pdf" else "PowerPoint"
+        log_fn(f"{rotulo} salvo localmente: {caminho}", "ok")
+    for aviso in avisos:
+        log_fn(f"Aviso: {aviso}", "aviso")
+    return [str(caminho) for caminho in salvos]
 
 
 def _carregar_grupos_projeto_funcional(

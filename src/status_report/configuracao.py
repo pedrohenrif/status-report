@@ -27,6 +27,13 @@ class Configuracoes:
     fuso_horario: str
     rodar_apenas_dias_uteis: bool
     modo_simulacao: bool
+    salvar_download_local: bool
+    pasta_download_local: str
+
+    def pasta_download_local_resolvida(self) -> Path:
+        if self.pasta_download_local:
+            return Path(self.pasta_download_local).expanduser()
+        return Path.home() / "Downloads" / "Status Report GHR"
 
     def validar(self) -> None:
         caminho = Path(self.arquivo_service_account)
@@ -61,6 +68,8 @@ def carregar_configuracoes() -> Configuracoes:
         fuso_horario=os.getenv("TIMEZONE", "America/Sao_Paulo"),
         rodar_apenas_dias_uteis=_para_bool(os.getenv("RUN_ONLY_WEEKDAYS", "true")),
         modo_simulacao=_para_bool(os.getenv("DRY_RUN", "false")),
+        salvar_download_local=_para_bool(os.getenv("SAVE_LOCAL_DOWNLOAD", "true")),
+        pasta_download_local=os.getenv("LOCAL_DOWNLOAD_FOLDER", "").strip(),
     )
 
 

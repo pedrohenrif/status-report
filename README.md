@@ -303,6 +303,12 @@ https://www.googleapis.com/auth/calendar.readonly
 | `TIMEZONE` | Fuso horário (padrão: `America/Sao_Paulo`) |
 | `RUN_ONLY_WEEKDAYS` | `true` para rodar apenas seg–sex |
 | `DRY_RUN` | `true` para validar sem gerar arquivos |
+| `SAVE_LOCAL_DOWNLOAD` | `true` para salvar `.pdf` e `.pptx` completos na máquina (padrão: `true`) |
+| `LOCAL_DOWNLOAD_FOLDER` | Pasta local de download (vazio → `~/Downloads/Status Report GHR`) |
+
+O download local exporta **PDF e PowerPoint completos** (todos os slides). Se a
+apresentação exceder o limite da Google (~10 MB), cada formato falha de forma
+independente — use o link do Drive para editar/apresentar online.
 
 ---
 

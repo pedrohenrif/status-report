@@ -194,6 +194,10 @@ class App(tk.Tk):
                 sucessos = sum(1 for r in resultados if r.sucesso)
                 tag = "ok" if sucessos == len(resultados) else "aviso"
                 self._log(f"Concluido: {sucessos}/{len(resultados)} com sucesso.", tag)
+                for resultado in resultados:
+                    for caminho in resultado.caminhos_locais:
+                        rotulo = "PDF" if caminho.lower().endswith(".pdf") else "PowerPoint"
+                        self._log(f"  {rotulo}: {caminho}", "ok")
             elif resultados == []:
                 pass  # mensagens ja exibidas no pipeline
 

@@ -44,6 +44,7 @@ class ResultadoExecucao:
     sucesso: bool
     url_pdf: str
     mensagem: str
+    caminhos_locais: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)

@@ -118,6 +118,8 @@ def executar_pipeline_coordenadora(
             _log(log_fn, f"Concluido: {resultado.mensagem}", "ok")
             if resultado.url_pdf:
                 _log(log_fn, f"Link: {resultado.url_pdf}", "ok")
+            for caminho in resultado.caminhos_locais:
+                _log(log_fn, f"Download: {caminho}", "ok")
             resultados.append(resultado)
         except Exception as e:
             _log(log_fn, f"Erro ao processar {cliente.nome_curto}: {e}", "erro")
