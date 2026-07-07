@@ -5,29 +5,185 @@ import queue
 import threading
 import tkinter as tk
 from datetime import date, datetime
-from tkinter import font, scrolledtext, ttk
+from tkinter import font as tkfont
+
+from status_report.recursos import caminho_logo
+
+# --- Paleta GHR --------------------------------------------------------------
+COR_PRIMARIA = "#12559C"       # azul GHR
+COR_PRIMARIA_ESC = "#0C3B6E"   # azul escuro (cabecalho)
+COR_PRIMARIA_HOVER = "#0E4A87"
+COR_ACENTO = "#3D8ED9"         # azul claro (detalhes)
+COR_SUCESSO = "#1E8E5A"
+COR_SUCESSO_HOVER = "#187048"
+COR_FUNDO = "#EEF2F7"          # fundo da janela
+COR_CARD = "#FFFFFF"
+COR_CAMPO = "#F1F4F9"
+COR_BORDA = "#DCE3EC"
+COR_TEXTO = "#22303F"
+COR_TEXTO_SUAVE = "#6B7A8D"
+COR_DESABILITADO = "#B4BFCB"
+
+# Feed de acompanhamento (tema claro)
+FEED_OK = "#178A55"
+FEED_ERRO = "#C23B34"
+FEED_AVISO = "#B9771A"
+FEED_INFO = "#5A6A7B"
+
+FONTE = "Segoe UI"
+
+_ICONES = {"ok": "✓", "erro": "✕", "aviso": "⚠", "info": "•"}
 
 
-_COR_AZUL = "#1a3c6e"
-_COR_AZUL_HOVER = "#15305a"
-_COR_BRANCO = "#ffffff"
-_COR_FUNDO = "#f4f6f9"
-_COR_BORDA = "#d1d9e0"
-_COR_VERDE = "#1a7a4a"
-_COR_VERMELHO = "#c0392b"
-_COR_LARANJA = "#d35400"
-_COR_CINZA = "#555555"
+# --- Desenho de cantos arredondados ------------------------------------------
+
+def _desenhar_arredondado(canvas: tk.Canvas, x1, y1, x2, y2, raio, **kw):
+    pontos = [
+        x1 + raio, y1, x2 - raio, y1, x2, y1, x2, y1 + raio,
+        x2, y2 - raio, x2, y2, x2 - raio, y2, x1 + raio, y2,
+        x1, y2, x1, y2 - raio, x1, y1 + raio, x1, y1,
+    ]
+    return canvas.create_polygon(pontos, smooth=True, **kw)
+
+
+class CartaoArredondado(tk.Canvas):
+    """Container com cantos arredondados. Conteudo vai em ``.inner``."""
+
+    def __init__(self, master, *, raio=16, cor=COR_CARD, cor_fundo=COR_FUNDO,
+                 borda=COR_BORDA, expandir=False, padding=18):
+        super().__init__(master, bg=cor_fundo, highlightthickness=0, bd=0, height=60)
+        self._raio = raio
+        self._cor = cor
+        self._borda = borda
+        self._expandir = expandir
+        self._pad = padding
+        self._rect = None
+        self.inner = tk.Frame(self, bg=cor)
+        self._win = self.create_window(padding, padding, window=self.inner, anchor="nw")
+        self.inner.bind("<Configure>", self._ao_inner)
+        self.bind("<Configure>", self._ao_canvas)
+
+    def _ao_inner(self, _e=None):
+        if not self._expandir:
+            self.configure(height=self.inner.winfo_reqheight() + 2 * self._pad)
+
+    def _ao_canvas(self, e):
+        self.itemconfigure(self._win, width=max(1, e.width - 2 * self._pad))
+        if self._expandir:
+            self.itemconfigure(self._win, height=max(1, e.height - 2 * self._pad))
+        if self._rect:
+            self.delete(self._rect)
+        self._rect = _desenhar_arredondado(
+            self, 1, 1, e.width - 1, e.height - 1, self._raio,
+            fill=self._cor, outline=self._borda, width=1,
+        )
+        self.tag_lower(self._rect)
+
+
+class BotaoArredondado(tk.Canvas):
+    def __init__(self, master, texto, comando, *, cor, cor_hover,
+                 cor_texto=COR_CARD, raio=12, cor_fundo=COR_FUNDO,
+                 pad_x=22, pad_y=11, tamanho=11, negrito=True):
+        super().__init__(master, bg=cor_fundo, highlightthickness=0, bd=0)
+        self._comando = comando
+        self._cor = cor
+        self._cor_hover = cor_hover
+        self._cor_texto = cor_texto
+        self._raio = raio
+        self._pad_x = pad_x
+        self._pad_y = pad_y
+        self._habilitado = True
+        self._texto = texto
+        self._fonte = tkfont.Font(family=FONTE, size=tamanho,
+                                  weight="bold" if negrito else "normal")
+        self._rect = None
+        self._lbl = None
+        self.bind("<Button-1>", self._ao_clicar)
+        self.bind("<Enter>", lambda _e: self._pintar(self._cor_hover))
+        self.bind("<Leave>", lambda _e: self._pintar(self._cor))
+        self._relayout()
+
+    def _relayout(self):
+        larg = self._fonte.measure(self._texto) + 2 * self._pad_x
+        alt = self._fonte.metrics("linespace") + 2 * self._pad_y
+        self.configure(width=larg, height=alt, cursor="hand2" if self._habilitado else "arrow")
+        self.delete("all")
+        cor = self._cor if self._habilitado else COR_DESABILITADO
+        self._rect = _desenhar_arredondado(self, 1, 1, larg - 1, alt - 1, self._raio,
+                                           fill=cor, outline=cor)
+        self._lbl = self.create_text(larg / 2, alt / 2, text=self._texto,
+                                     fill=self._cor_texto, font=self._fonte)
+
+    def _pintar(self, cor):
+        if self._habilitado and self._rect:
+            self.itemconfigure(self._rect, fill=cor, outline=cor)
+
+    def _ao_clicar(self, _e):
+        if self._habilitado and self._comando:
+            self._comando()
+
+    def definir_texto(self, texto):
+        self._texto = texto
+        self._relayout()
+
+    def definir_habilitado(self, habilitado):
+        self._habilitado = habilitado
+        self._relayout()
+
+
+class CampoArredondado(tk.Canvas):
+    def __init__(self, master, variavel, *, largura_px=300, cor_fundo=COR_CARD, raio=10):
+        super().__init__(master, bg=cor_fundo, highlightthickness=0, bd=0,
+                         width=largura_px, height=40)
+        self._raio = raio
+        self._cor_borda = COR_BORDA
+        self._rect = None
+        self.entry = tk.Entry(self, textvariable=variavel, font=(FONTE, 11),
+                              relief="flat", bd=0, bg=COR_CAMPO, fg=COR_TEXTO,
+                              highlightthickness=0, insertbackground=COR_TEXTO)
+        self._win = self.create_window(14, 20, window=self.entry, anchor="w")
+        self.entry.bind("<FocusIn>", lambda _e: self._definir_borda(COR_ACENTO))
+        self.entry.bind("<FocusOut>", lambda _e: self._definir_borda(COR_BORDA))
+        self.bind("<Configure>", self._redesenhar)
+
+    def _redesenhar(self, _e=None):
+        w = self.winfo_width()
+        h = self.winfo_height()
+        self.itemconfigure(self._win, width=w - 26)
+        if self._rect:
+            self.delete(self._rect)
+        self._rect = _desenhar_arredondado(self, 1, 1, w - 1, h - 1, self._raio,
+                                           fill=COR_CAMPO, outline=self._cor_borda, width=1)
+        self.tag_lower(self._rect)
+
+    def _definir_borda(self, cor):
+        self._cor_borda = cor
+        self._redesenhar()
+
+    def focus(self):
+        self.entry.focus()
 
 
 class App(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
         self.title("Gerador de Status Report — GHR")
-        self.geometry("680x560")
-        self.resizable(False, False)
-        self.configure(bg=_COR_FUNDO)
+        self.geometry("800x700")
+        self.minsize(740, 640)
+        self.configure(bg=COR_FUNDO)
+
         self._fila_log: queue.Queue[tuple[str, str]] = queue.Queue()
+        self._clientes: list = []
+        self._config = None
+        self._servicos = None
+        self._logo_img: tk.PhotoImage | None = None
+        self._ocupado = False
+
+        self._fonte_nome = tkfont.Font(family=FONTE, size=10, weight="bold")
+        self._fonte_id = tkfont.Font(family=FONTE, size=9)
+
         self._construir_ui()
+        self._registrar_invalidacao()
         self._verificar_fila_log()
 
     # ------------------------------------------------------------------
@@ -36,204 +192,360 @@ class App(tk.Tk):
 
     def _construir_ui(self) -> None:
         self._construir_cabecalho()
-        self._construir_formulario()
-        self._construir_botao()
-        self._construir_area_log()
+        corpo = tk.Frame(self, bg=COR_FUNDO)
+        corpo.pack(fill="both", expand=True, padx=24, pady=(18, 22))
+        self._construir_formulario(corpo)
+        self._construir_clientes(corpo)
+        self._construir_acompanhamento(corpo)
 
     def _construir_cabecalho(self) -> None:
-        frame = tk.Frame(self, bg=_COR_AZUL)
-        frame.pack(fill="x")
-        tk.Label(
-            frame,
-            text="Gerador de Status Report",
-            bg=_COR_AZUL,
-            fg=_COR_BRANCO,
-            font=("Helvetica", 17, "bold"),
-            pady=18,
-        ).pack()
-        tk.Label(
-            frame,
-            text="GHR Tech — Automacao de Relatorios",
-            bg=_COR_AZUL,
-            fg="#a8c0e0",
-            font=("Helvetica", 9),
-            pady=0,
-        ).pack()
-        tk.Frame(frame, bg=_COR_AZUL, height=12).pack()
+        barra = tk.Frame(self, bg=COR_PRIMARIA_ESC)
+        barra.pack(fill="x")
+        interno = tk.Frame(barra, bg=COR_PRIMARIA_ESC)
+        interno.pack(fill="x", padx=24, pady=16)
 
-    def _construir_formulario(self) -> None:
-        frame = tk.Frame(self, bg=_COR_FUNDO, padx=30, pady=20)
-        frame.pack(fill="x")
+        logo = self._carregar_logo()
+        if logo is not None:
+            self._logo_img = logo
+            tk.Label(interno, image=logo, bg=COR_PRIMARIA_ESC).pack(side="left", padx=(0, 16))
 
-        # Coordenadora
-        tk.Label(
-            frame, text="Coordenadora", bg=_COR_FUNDO,
-            font=("Helvetica", 10, "bold"), fg=_COR_CINZA, anchor="w",
-        ).grid(row=0, column=0, sticky="w")
+        textos = tk.Frame(interno, bg=COR_PRIMARIA_ESC)
+        textos.pack(side="left", anchor="w")
+        tk.Label(textos, text="Gerador de Status Report", bg=COR_PRIMARIA_ESC,
+                 fg=COR_CARD, font=(FONTE, 18, "bold")).pack(anchor="w")
+        tk.Label(textos, text="GHR Tech · Automação de Relatórios", bg=COR_PRIMARIA_ESC,
+                 fg=COR_ACENTO, font=(FONTE, 10)).pack(anchor="w")
+
+        tk.Frame(self, bg=COR_ACENTO, height=3).pack(fill="x")
+
+    def _construir_formulario(self, pai: tk.Frame) -> None:
+        card = CartaoArredondado(pai)
+        card.pack(fill="x")
+        corpo = card.inner
+
+        grade = tk.Frame(corpo, bg=COR_CARD)
+        grade.pack(fill="x", padx=6, pady=(4, 2))
+
+        tk.Label(grade, text="COORDENADORA", bg=COR_CARD, font=(FONTE, 8, "bold"),
+                 fg=COR_TEXTO_SUAVE).grid(row=0, column=0, sticky="w")
         self._var_coordenadora = tk.StringVar()
-        entry_coord = tk.Entry(
-            frame, textvariable=self._var_coordenadora,
-            width=38, font=("Helvetica", 11),
-            relief="flat", bd=0, bg=_COR_BRANCO,
-            highlightthickness=1, highlightbackground=_COR_BORDA,
-            highlightcolor=_COR_AZUL,
-        )
-        entry_coord.grid(row=1, column=0, pady=(4, 14), ipady=7, sticky="w")
-        entry_coord.focus()
+        campo_coord = CampoArredondado(grade, self._var_coordenadora, largura_px=320)
+        campo_coord.grid(row=1, column=0, pady=(4, 0), sticky="w")
+        campo_coord.focus()
 
-        # Data
-        tk.Label(
-            frame, text="Data (DD/MM/AAAA)", bg=_COR_FUNDO,
-            font=("Helvetica", 10, "bold"), fg=_COR_CINZA, anchor="w",
-        ).grid(row=0, column=1, sticky="w", padx=(20, 0))
+        tk.Label(grade, text="DATA (DD/MM/AAAA)", bg=COR_CARD, font=(FONTE, 8, "bold"),
+                 fg=COR_TEXTO_SUAVE).grid(row=0, column=1, sticky="w", padx=(18, 0))
         self._var_data = tk.StringVar(value=date.today().strftime("%d/%m/%Y"))
-        entry_data = tk.Entry(
-            frame, textvariable=self._var_data,
-            width=16, font=("Helvetica", 11),
-            relief="flat", bd=0, bg=_COR_BRANCO,
-            highlightthickness=1, highlightbackground=_COR_BORDA,
-            highlightcolor=_COR_AZUL,
+        campo_data = CampoArredondado(grade, self._var_data, largura_px=150)
+        campo_data.grid(row=1, column=1, pady=(4, 0), padx=(18, 0), sticky="w")
+
+        btn_hoje = BotaoArredondado(
+            grade, "Hoje",
+            lambda: self._var_data.set(date.today().strftime("%d/%m/%Y")),
+            cor=COR_CAMPO, cor_hover=COR_BORDA, cor_texto=COR_TEXTO,
+            cor_fundo=COR_CARD, raio=10, pad_x=14, pad_y=9, tamanho=9, negrito=False,
         )
-        entry_data.grid(row=1, column=1, pady=(4, 14), ipady=7, padx=(20, 0), sticky="w")
+        btn_hoje.grid(row=1, column=2, padx=(8, 0), pady=(4, 0), sticky="w")
 
-        # Botao "Hoje"
-        tk.Button(
-            frame, text="Hoje",
-            command=lambda: self._var_data.set(date.today().strftime("%d/%m/%Y")),
-            bg=_COR_BORDA, fg=_COR_CINZA, relief="flat",
-            font=("Helvetica", 9), cursor="hand2", padx=8,
-        ).grid(row=1, column=2, padx=(6, 0), pady=(4, 14), sticky="w")
-
-    def _construir_botao(self) -> None:
-        frame = tk.Frame(self, bg=_COR_FUNDO)
-        frame.pack(fill="x", padx=30)
-        self._btn = tk.Button(
-            frame,
-            text="Gerar Status Reports",
-            command=self._ao_clicar_gerar,
-            bg=_COR_AZUL, fg=_COR_BRANCO,
-            font=("Helvetica", 12, "bold"),
-            relief="flat", cursor="hand2",
-            padx=28, pady=10,
+        acoes = tk.Frame(corpo, bg=COR_CARD)
+        acoes.pack(fill="x", padx=6, pady=(16, 4))
+        self._btn_buscar = BotaoArredondado(
+            acoes, "Buscar clientes", self._ao_buscar,
+            cor=COR_PRIMARIA, cor_hover=COR_PRIMARIA_HOVER, cor_fundo=COR_CARD,
         )
-        self._btn.pack(anchor="w")
-        self._btn.bind("<Enter>", lambda _: self._btn.config(bg=_COR_AZUL_HOVER))
-        self._btn.bind("<Leave>", lambda _: self._btn.config(bg=_COR_AZUL))
+        self._btn_buscar.pack(side="left")
+        self._btn_gerar = BotaoArredondado(
+            acoes, "Gerar Status Reports", self._ao_gerar,
+            cor=COR_SUCESSO, cor_hover=COR_SUCESSO_HOVER, cor_fundo=COR_CARD,
+        )
+        self._btn_gerar.pack(side="left", padx=(10, 0))
+        self._btn_gerar.definir_habilitado(False)
 
-    def _construir_area_log(self) -> None:
-        frame = tk.Frame(self, bg=_COR_FUNDO, padx=30, pady=10)
-        frame.pack(fill="both", expand=True)
+    def _construir_clientes(self, pai: tk.Frame) -> None:
+        card = CartaoArredondado(pai)
+        card.pack(fill="x", pady=(14, 0))
+        corpo = card.inner
+
+        topo = tk.Frame(corpo, bg=COR_CARD)
+        topo.pack(fill="x", padx=6)
+        tk.Label(topo, text="Clientes do dia", bg=COR_CARD, font=(FONTE, 11, "bold"),
+                 fg=COR_TEXTO).pack(side="left")
+        self._lbl_contador = tk.Label(topo, text="", bg=COR_ACENTO, fg=COR_CARD,
+                                      font=(FONTE, 9, "bold"), padx=9, pady=1)
+
+        self._clientes_container = tk.Frame(corpo, bg=COR_CARD)
+        self._clientes_container.pack(fill="x", padx=6, pady=(10, 2))
+        self._render_placeholder_clientes()
+
+    def _construir_acompanhamento(self, pai: tk.Frame) -> None:
+        card = CartaoArredondado(pai, expandir=True)
+        card.pack(fill="both", expand=True, pady=(14, 0))
+        corpo = card.inner
+
+        topo = tk.Frame(corpo, bg=COR_CARD)
+        topo.pack(fill="x", padx=6)
+        tk.Label(topo, text="Acompanhamento", bg=COR_CARD, font=(FONTE, 11, "bold"),
+                 fg=COR_TEXTO).pack(side="left")
+        tk.Label(topo, text="Limpar", bg=COR_CARD, fg=COR_TEXTO_SUAVE,
+                 font=(FONTE, 9, "underline"), cursor="hand2").pack(side="right")
+        topo.winfo_children()[-1].bind("<Button-1>", lambda _e: self._limpar_log())
+
+        moldura = tk.Frame(corpo, bg=COR_CARD)
+        moldura.pack(fill="both", expand=True, padx=6, pady=(10, 4))
+        self._feed = tk.Text(
+            moldura, font=(FONTE, 10), state="disabled", bg=COR_CARD, fg=COR_TEXTO,
+            relief="flat", borderwidth=0, wrap="word", cursor="arrow",
+            spacing1=4, spacing3=4, padx=4, pady=2, highlightthickness=0,
+        )
+        scroll = tk.Scrollbar(moldura, command=self._feed.yview, width=12,
+                              relief="flat", bd=0, troughcolor=COR_CARD)
+        self._feed.configure(yscrollcommand=scroll.set)
+        scroll.pack(side="right", fill="y")
+        self._feed.pack(side="left", fill="both", expand=True)
+
+        for chave, cor in (("ok", FEED_OK), ("erro", FEED_ERRO),
+                           ("aviso", FEED_AVISO), ("info", COR_TEXTO)):
+            self._feed.tag_config(chave, foreground=cor, lmargin1=2, lmargin2=26)
+            self._feed.tag_config(chave + "_i", foreground=cor)
+        self._feed.tag_config("sub", foreground=FEED_INFO, lmargin1=26, lmargin2=40)
+
+    # ------------------------------------------------------------------
+    # Painel de clientes
+    # ------------------------------------------------------------------
+
+    def _limpar_container_clientes(self) -> None:
+        for w in self._clientes_container.winfo_children():
+            w.destroy()
+
+    def _render_placeholder_clientes(self, texto: str | None = None) -> None:
+        self._limpar_container_clientes()
+        self._lbl_contador.pack_forget()
         tk.Label(
-            frame, text="Log de execucao", bg=_COR_FUNDO,
-            font=("Helvetica", 10, "bold"), fg=_COR_CINZA, anchor="w",
-        ).pack(fill="x", pady=(0, 4))
-        self._log_area = scrolledtext.ScrolledText(
-            frame, height=14, font=("Courier", 9),
-            state="disabled", bg="#1e2533", fg="#d0d7e3",
-            relief="flat", borderwidth=0, padx=10, pady=8,
-        )
-        self._log_area.pack(fill="both", expand=True)
-        self._log_area.tag_config("ok", foreground="#4ec97e")
-        self._log_area.tag_config("erro", foreground="#ff6b6b")
-        self._log_area.tag_config("aviso", foreground="#ffd166")
-        self._log_area.tag_config("info", foreground="#d0d7e3")
-        self._log_area.tag_config("separador", foreground="#444c60")
+            self._clientes_container,
+            text=texto or "Informe a coordenadora e a data, depois clique em “Buscar clientes”.",
+            bg=COR_CARD, fg=COR_TEXTO_SUAVE, font=(FONTE, 10, "italic"),
+            anchor="w", justify="left", wraplength=700,
+        ).pack(fill="x", pady=6)
+
+    def _render_clientes(self, clientes: list) -> None:
+        self._limpar_container_clientes()
+        self._lbl_contador.config(text=f"{len(clientes)}")
+        self._lbl_contador.pack(side="left", padx=(10, 0))
+        for cliente in clientes:
+            linha = tk.Canvas(self._clientes_container, bg=COR_CARD,
+                              highlightthickness=0, bd=0, height=50)
+            linha.pack(fill="x", pady=3)
+            linha.bind(
+                "<Configure>",
+                lambda e, c=linha, nome=cliente.nome_curto, cid=cliente.cliente_id_completo:
+                    self._desenhar_linha_cliente(c, nome, cid),
+            )
+
+    def _desenhar_linha_cliente(self, canvas: tk.Canvas, nome: str, cid: str) -> None:
+        canvas.delete("all")
+        w = canvas.winfo_width()
+        h = canvas.winfo_height()
+        _desenhar_arredondado(canvas, 1, 1, w - 1, h - 1, 12,
+                              fill=COR_CAMPO, outline=COR_BORDA, width=1)
+        canvas.create_oval(16, h / 2 - 4, 24, h / 2 + 4, fill=COR_ACENTO, outline=COR_ACENTO)
+        canvas.create_text(38, 16, text=nome, anchor="w", fill=COR_TEXTO, font=self._fonte_nome)
+        canvas.create_text(38, 33, text=self._cortar(self._fonte_id, cid, w - 52),
+                           anchor="w", fill=COR_TEXTO_SUAVE, font=self._fonte_id)
+
+    @staticmethod
+    def _cortar(fonte: tkfont.Font, texto: str, largura_max: int) -> str:
+        if largura_max <= 0 or fonte.measure(texto) <= largura_max:
+            return texto
+        while texto and fonte.measure(texto + "…") > largura_max:
+            texto = texto[:-1]
+        return texto + "…"
 
     # ------------------------------------------------------------------
     # Acoes
     # ------------------------------------------------------------------
 
-    def _ao_clicar_gerar(self) -> None:
-        coordenadora = self._var_coordenadora.get().strip()
-        data_str = self._var_data.get().strip()
+    def _registrar_invalidacao(self) -> None:
+        self._var_coordenadora.trace_add("write", self._invalidar_selecao)
+        self._var_data.trace_add("write", self._invalidar_selecao)
 
-        self._limpar_log()
+    def _invalidar_selecao(self, *_args) -> None:
+        if self._ocupado:
+            return
+        if self._clientes:
+            self._clientes = []
+            self._render_placeholder_clientes(
+                "Dados alterados — clique em “Buscar clientes” novamente."
+            )
+        self._btn_gerar.definir_habilitado(False)
 
-        if not coordenadora:
+    def _validar_entradas(self) -> date | None:
+        if not self._var_coordenadora.get().strip():
             self._log("Informe o nome da coordenadora.", "aviso")
-            return
-
+            return None
         try:
-            data = datetime.strptime(data_str, "%d/%m/%Y").date()
+            return datetime.strptime(self._var_data.get().strip(), "%d/%m/%Y").date()
         except ValueError:
-            self._log(f"Data invalida '{data_str}'. Use o formato DD/MM/AAAA.", "aviso")
+            self._log(f"Data inválida '{self._var_data.get().strip()}'. Use DD/MM/AAAA.", "aviso")
+            return None
+
+    def _ao_buscar(self) -> None:
+        self._limpar_log()
+        data = self._validar_entradas()
+        if data is None:
             return
+        coordenadora = self._var_coordenadora.get().strip()
 
-        self._btn.config(state="disabled", text="Gerando...")
-        thread = threading.Thread(
-            target=self._executar_em_thread, args=(coordenadora, data), daemon=True
-        )
-        thread.start()
+        self._ocupado = True
+        self._clientes = []
+        self._render_placeholder_clientes("Procurando os clientes na agenda...")
+        self._btn_gerar.definir_habilitado(False)
+        self._btn_buscar.definir_habilitado(False)
+        self._btn_buscar.definir_texto("Procurando...")
 
-    def _executar_em_thread(self, coordenadora: str, data: date) -> None:
+        threading.Thread(target=self._buscar_em_thread,
+                         args=(coordenadora, data), daemon=True).start()
+
+    def _buscar_em_thread(self, coordenadora: str, data: date) -> None:
+        clientes: list = []
         try:
             from status_report.aplicacao.pipeline_coordenadora import (
-                executar_pipeline_coordenadora,
+                buscar_clientes_para_status_report,
             )
             from status_report.configuracao import carregar_configuracoes
             from status_report.infraestrutura.autenticacao_google import (
                 construir_servicos_google,
             )
 
-            self._log(f"Iniciando — {coordenadora} | {data.strftime('%d/%m/%Y')}")
-            self._log("─" * 52, "separador")
+            self._log(f"Procurando os status reports de {coordenadora} em "
+                      f"{data.strftime('%d/%m/%Y')}...")
 
-            config = carregar_configuracoes()
-            servicos = construir_servicos_google(config)
+            self._config = carregar_configuracoes()
+            self._servicos = construir_servicos_google(self._config)
 
-            resultados = executar_pipeline_coordenadora(
-                config=config,
-                servicos=servicos,
-                nome_coordenadora=coordenadora,
-                data_referencia=data,
-                log_fn=self._log,
+            clientes = buscar_clientes_para_status_report(
+                config=self._config, servicos=self._servicos,
+                nome_coordenadora=coordenadora, data_referencia=data, log_fn=self._log,
             )
-
-            self._log("─" * 52, "separador")
-            if resultados:
-                sucessos = sum(1 for r in resultados if r.sucesso)
-                tag = "ok" if sucessos == len(resultados) else "aviso"
-                self._log(f"Concluido: {sucessos}/{len(resultados)} com sucesso.", tag)
-                for resultado in resultados:
-                    for caminho in resultado.caminhos_locais:
-                        rotulo = "PDF" if caminho.lower().endswith(".pdf") else "PowerPoint"
-                        self._log(f"  {rotulo}: {caminho}", "ok")
-            elif resultados == []:
-                pass  # mensagens ja exibidas no pipeline
-
         except Exception as e:
-            self._log(f"Erro inesperado: {e}", "erro")
+            self._log(f"Algo deu errado: {e}", "erro")
         finally:
-            self.after(0, lambda: self._btn.config(state="normal", text="Gerar Status Reports"))
+            self.after(0, lambda: self._apos_busca(clientes))
+
+    def _apos_busca(self, clientes: list) -> None:
+        self._ocupado = False
+        self._clientes = clientes
+        self._btn_buscar.definir_habilitado(True)
+        self._btn_buscar.definir_texto("Buscar clientes")
+        if clientes:
+            self._render_clientes(clientes)
+            self._btn_gerar.definir_habilitado(True)
+            self._log("Confira os clientes acima e clique em “Gerar Status Reports”.", "info")
+        else:
+            self._render_placeholder_clientes(
+                "Nenhum cliente encontrado para esta coordenadora/data."
+            )
+            self._btn_gerar.definir_habilitado(False)
+
+    def _ao_gerar(self) -> None:
+        if not self._clientes or self._config is None or self._servicos is None:
+            self._log("Busque os clientes antes de gerar.", "aviso")
+            return
+        data = self._validar_entradas()
+        if data is None:
+            return
+
+        self._ocupado = True
+        self._btn_gerar.definir_habilitado(False)
+        self._btn_gerar.definir_texto("Gerando...")
+        self._btn_buscar.definir_habilitado(False)
+
+        threading.Thread(target=self._gerar_em_thread,
+                         args=(list(self._clientes), data), daemon=True).start()
+
+    def _gerar_em_thread(self, clientes: list, data: date) -> None:
+        resultados: list = []
+        try:
+            from status_report.aplicacao.pipeline_coordenadora import processar_clientes
+
+            self._log(f"Gerando {len(clientes)} status report(s)...", "info")
+            resultados = processar_clientes(
+                config=self._config, servicos=self._servicos,
+                clientes=clientes, data_referencia=data, log_fn=self._log,
+            )
+        except Exception as e:
+            self._log(f"Algo deu errado: {e}", "erro")
+        finally:
+            self.after(0, lambda: self._apos_geracao(resultados))
+
+    def _apos_geracao(self, resultados: list) -> None:
+        self._ocupado = False
+        if resultados:
+            sucessos = sum(1 for r in resultados if r.sucesso)
+            tag = "ok" if sucessos == len(resultados) else "aviso"
+            self._log(f"Pronto! {sucessos} de {len(resultados)} gerado(s) com sucesso.", tag)
+            for resultado in resultados:
+                for caminho in resultado.caminhos_locais:
+                    rotulo = "PDF" if caminho.lower().endswith(".pdf") else "PowerPoint"
+                    self._log(f"{rotulo} salvo em: {caminho}", "ok")
+        self._btn_gerar.definir_texto("Gerar Status Reports")
+        self._btn_buscar.definir_habilitado(True)
+        self._btn_gerar.definir_habilitado(bool(self._clientes))
 
     # ------------------------------------------------------------------
-    # Log (thread-safe via fila)
+    # Logo
+    # ------------------------------------------------------------------
+
+    def _carregar_logo(self, altura_alvo: int = 60) -> tk.PhotoImage | None:
+        caminho = caminho_logo()
+        if caminho is None:
+            return None
+        try:
+            img = tk.PhotoImage(file=str(caminho))
+        except Exception:
+            return None
+        fator = max(1, round(img.height() / altura_alvo))
+        return img.subsample(fator, fator) if fator > 1 else img
+
+    # ------------------------------------------------------------------
+    # Acompanhamento (thread-safe via fila)
     # ------------------------------------------------------------------
 
     def _log(self, msg: str, tag: str = "info") -> None:
         self._fila_log.put((msg, tag))
 
     def _limpar_log(self) -> None:
-        self._log_area.configure(state="normal")
-        self._log_area.delete("1.0", "end")
-        self._log_area.configure(state="disabled")
+        self._feed.configure(state="normal")
+        self._feed.delete("1.0", "end")
+        self._feed.configure(state="disabled")
+
+    def _inserir_feed(self, msg: str, tag: str) -> None:
+        self._feed.configure(state="normal")
+        for linha in msg.split("\n"):
+            texto = linha.strip()
+            if not texto:
+                self._feed.insert("end", "\n")
+                continue
+            if texto.startswith("•"):
+                self._feed.insert("end", "   " + texto.lstrip("• ").strip() + "\n", ("sub",))
+            else:
+                icone = _ICONES.get(tag, "•")
+                self._feed.insert("end", icone + "  ", (tag + "_i",))
+                self._feed.insert("end", texto + "\n", (tag,))
+        self._feed.see("end")
+        self._feed.configure(state="disabled")
 
     def _verificar_fila_log(self) -> None:
         try:
             while True:
                 msg, tag = self._fila_log.get_nowait()
-                self._log_area.configure(state="normal")
-                self._log_area.insert("end", msg + "\n", tag)
-                self._log_area.see("end")
-                self._log_area.configure(state="disabled")
+                self._inserir_feed(msg, tag)
         except queue.Empty:
             pass
         self.after(100, self._verificar_fila_log)
 
 
 def main() -> None:
-    app = App()
-    app.mainloop()
+    App().mainloop()
 
 
 if __name__ == "__main__":

@@ -18,7 +18,7 @@ from status_report.aplicacao.fila_clientes_calendario import (
 )
 from status_report.aplicacao.pipeline_diario import _processar_cliente
 from status_report.configuracao import Configuracoes
-from status_report.dominio.modelos import ResultadoExecucao
+from status_report.dominio.modelos import ClienteFila, ResultadoExecucao
 from status_report.infraestrutura.autenticacao_google import (
     ServicosGoogle,
     construir_servico_calendario,
@@ -34,14 +34,18 @@ def _log(fn: LogFn, msg: str, tag: str = "info") -> None:
     fn(msg, tag)
 
 
-def executar_pipeline_coordenadora(
+def buscar_clientes_para_status_report(
     config: Configuracoes,
     servicos: ServicosGoogle,
     nome_coordenadora: str,
     data_referencia: date,
     log_fn: LogFn = lambda msg, tag: print(msg),
-) -> list[ResultadoExecucao]:
+) -> list[ClienteFila]:
+    """Etapa 1: descobre os clientes do dia (sem gerar nada).
 
+    Retorna a lista de clientes que receberao Status Report. Devolve lista
+    vazia (registrando o motivo via ``log_fn``) quando nao ha o que processar.
+    """
     # 1. Busca coordenadora na planilha
     _log(log_fn, f"Buscando '{nome_coordenadora}' na planilha...")
     try:
@@ -99,11 +103,21 @@ def executar_pipeline_coordenadora(
         _log(log_fn, "Verifique a aba Clientes e se o codigo numerico do evento (ex: 131) esta cadastrado.", "aviso")
         return []
 
-    _log(log_fn, f"\n{len(clientes)} cliente(s) para processar:")
+    _log(log_fn, f"\n{len(clientes)} cliente(s) encontrado(s):", "ok")
     for c in clientes:
         _log(log_fn, f"  • {c.nome_curto} — {c.cliente_id_completo}")
 
-    # 4. Processa cada cliente
+    return clientes
+
+
+def processar_clientes(
+    config: Configuracoes,
+    servicos: ServicosGoogle,
+    clientes: list[ClienteFila],
+    data_referencia: date,
+    log_fn: LogFn = lambda msg, tag: print(msg),
+) -> list[ResultadoExecucao]:
+    """Etapa 2: gera os Status Reports para os clientes ja selecionados."""
     resultados: list[ResultadoExecucao] = []
     for cliente in clientes:
         _log(log_fn, f"\nProcessando: {cliente.nome_curto}...")
@@ -133,3 +147,31 @@ def executar_pipeline_coordenadora(
             )
 
     return resultados
+
+
+def executar_pipeline_coordenadora(
+    config: Configuracoes,
+    servicos: ServicosGoogle,
+    nome_coordenadora: str,
+    data_referencia: date,
+    log_fn: LogFn = lambda msg, tag: print(msg),
+) -> list[ResultadoExecucao]:
+    """Fluxo completo (buscar + gerar) em uma chamada, para uso via CLI."""
+    clientes = buscar_clientes_para_status_report(
+        config=config,
+        servicos=servicos,
+        nome_coordenadora=nome_coordenadora,
+        data_referencia=data_referencia,
+        log_fn=log_fn,
+    )
+    if not clientes:
+        return []
+
+    _log(log_fn, f"\n{len(clientes)} cliente(s) para processar:")
+    return processar_clientes(
+        config=config,
+        servicos=servicos,
+        clientes=clientes,
+        data_referencia=data_referencia,
+        log_fn=log_fn,
+    )

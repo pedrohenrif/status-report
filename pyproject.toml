@@ -24,6 +24,7 @@ status-report-gui = "status_report.gui:main"
 
 [tool.poetry]
 packages = [{ include = "status_report", from = "src" }]
+include = [{ path = "src/status_report/recursos/*.png", format = ["sdist", "wheel"] }]
 
 
 [build-system]
