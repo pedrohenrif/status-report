@@ -2,12 +2,17 @@
 from __future__ import annotations
 
 import queue
+import re
 import threading
 import tkinter as tk
+from dataclasses import replace
 from datetime import date, datetime
 from tkinter import font as tkfont
+from tkinter import ttk
 
 from status_report.recursos import caminho_logo
+
+_RE_CODIGO_NEGOCIO = re.compile(r"(\d{3,4}-\d{2})")
 
 # --- Paleta GHR --------------------------------------------------------------
 COR_PRIMARIA = "#12559C"       # azul GHR
@@ -174,13 +179,13 @@ class App(tk.Tk):
 
         self._fila_log: queue.Queue[tuple[str, str]] = queue.Queue()
         self._clientes: list = []
+        self._projetos_por_cliente: list[list] = []
+        self._combos: list = []
+        self._mapa_rotulo_proj: list[dict] = []
         self._config = None
         self._servicos = None
         self._logo_img: tk.PhotoImage | None = None
         self._ocupado = False
-
-        self._fonte_nome = tkfont.Font(family=FONTE, size=10, weight="bold")
-        self._fonte_id = tkfont.Font(family=FONTE, size=9)
 
         self._construir_ui()
         self._registrar_invalidacao()
@@ -190,7 +195,42 @@ class App(tk.Tk):
     # Construcao da UI
     # ------------------------------------------------------------------
 
+    def _configurar_estilo_ttk(self) -> None:
+        style = ttk.Style(self)
+        try:
+            style.theme_use("clam")
+        except tk.TclError:
+            pass
+        style.configure(
+            "GHR.TCombobox",
+            fieldbackground=COR_CARD,
+            background=COR_CARD,
+            foreground=COR_TEXTO,
+            arrowcolor=COR_PRIMARIA,
+            bordercolor=COR_BORDA,
+            lightcolor=COR_BORDA,
+            darkcolor=COR_BORDA,
+            relief="flat",
+            padding=7,
+            arrowsize=15,
+        )
+        style.map(
+            "GHR.TCombobox",
+            fieldbackground=[("readonly", COR_CARD), ("focus", COR_CARD)],
+            selectbackground=[("readonly", COR_CARD)],
+            selectforeground=[("readonly", COR_TEXTO)],
+            bordercolor=[("focus", COR_ACENTO), ("active", COR_ACENTO)],
+            arrowcolor=[("active", COR_PRIMARIA_HOVER)],
+        )
+        self.option_add("*TCombobox*Listbox.background", COR_CARD)
+        self.option_add("*TCombobox*Listbox.foreground", COR_TEXTO)
+        self.option_add("*TCombobox*Listbox.selectBackground", COR_ACENTO)
+        self.option_add("*TCombobox*Listbox.selectForeground", COR_CARD)
+        self.option_add("*TCombobox*Listbox.font", (FONTE, 9))
+        self.option_add("*TCombobox*Listbox.borderWidth", 0)
+
     def _construir_ui(self) -> None:
+        self._configurar_estilo_ttk()
         self._construir_cabecalho()
         corpo = tk.Frame(self, bg=COR_FUNDO)
         corpo.pack(fill="both", expand=True, padx=24, pady=(18, 22))
@@ -319,6 +359,8 @@ class App(tk.Tk):
 
     def _render_placeholder_clientes(self, texto: str | None = None) -> None:
         self._limpar_container_clientes()
+        self._combos = []
+        self._mapa_rotulo_proj = []
         self._lbl_contador.pack_forget()
         tk.Label(
             self._clientes_container,
@@ -327,38 +369,66 @@ class App(tk.Tk):
             anchor="w", justify="left", wraplength=700,
         ).pack(fill="x", pady=6)
 
-    def _render_clientes(self, clientes: list) -> None:
+    def _render_clientes(self, clientes: list, projetos_por_cliente: list) -> None:
         self._limpar_container_clientes()
+        self._combos = []
+        self._mapa_rotulo_proj = []
         self._lbl_contador.config(text=f"{len(clientes)}")
         self._lbl_contador.pack(side="left", padx=(10, 0))
-        for cliente in clientes:
-            linha = tk.Canvas(self._clientes_container, bg=COR_CARD,
-                              highlightthickness=0, bd=0, height=50)
-            linha.pack(fill="x", pady=3)
-            linha.bind(
-                "<Configure>",
-                lambda e, c=linha, nome=cliente.nome_curto, cid=cliente.cliente_id_completo:
-                    self._desenhar_linha_cliente(c, nome, cid),
-            )
 
-    def _desenhar_linha_cliente(self, canvas: tk.Canvas, nome: str, cid: str) -> None:
-        canvas.delete("all")
-        w = canvas.winfo_width()
-        h = canvas.winfo_height()
-        _desenhar_arredondado(canvas, 1, 1, w - 1, h - 1, 12,
-                              fill=COR_CAMPO, outline=COR_BORDA, width=1)
-        canvas.create_oval(16, h / 2 - 4, 24, h / 2 + 4, fill=COR_ACENTO, outline=COR_ACENTO)
-        canvas.create_text(38, 16, text=nome, anchor="w", fill=COR_TEXTO, font=self._fonte_nome)
-        canvas.create_text(38, 33, text=self._cortar(self._fonte_id, cid, w - 52),
-                           anchor="w", fill=COR_TEXTO_SUAVE, font=self._fonte_id)
+        for cliente, projetos in zip(clientes, projetos_por_cliente):
+            self._render_linha_cliente(cliente, projetos)
+
+    def _render_linha_cliente(self, cliente, projetos: list) -> None:
+        card = CartaoArredondado(self._clientes_container, cor=COR_CAMPO,
+                                 raio=12, padding=10)
+        card.pack(fill="x", pady=3)
+        row = card.inner
+
+        tk.Label(row, text="●", bg=COR_CAMPO, fg=COR_ACENTO,
+                 font=(FONTE, 10)).pack(side="left", padx=(2, 8))
+
+        texto = tk.Frame(row, bg=COR_CAMPO)
+        texto.pack(side="left", fill="x", expand=True)
+        tk.Label(texto, text=cliente.nome_curto, bg=COR_CAMPO, fg=COR_TEXTO,
+                 font=(FONTE, 10, "bold"), anchor="w").pack(fill="x")
+        tk.Label(texto, text=cliente.cliente_id_completo, bg=COR_CAMPO,
+                 fg=COR_TEXTO_SUAVE, font=(FONTE, 9), anchor="w").pack(fill="x")
+
+        seletor = tk.Frame(row, bg=COR_CAMPO)
+        seletor.pack(side="right", padx=(8, 2))
+        tk.Label(seletor, text="PROJETO", bg=COR_CAMPO, fg=COR_TEXTO_SUAVE,
+                 font=(FONTE, 8, "bold")).pack(anchor="w")
+
+        if projetos:
+            mapa = {p.rotulo(): p for p in projetos}
+            combo = ttk.Combobox(seletor, values=list(mapa.keys()),
+                                 state="readonly", width=44, font=(FONTE, 9),
+                                 style="GHR.TCombobox")
+            combo.pack(ipady=1)
+            self._preselecionar_projeto(combo, cliente, projetos)
+            self._combos.append(combo)
+            self._mapa_rotulo_proj.append(mapa)
+        else:
+            aviso = ("sem nr_seq_cliente cadastrado"
+                     if not cliente.nr_seq_cliente else "nenhum projeto ativo no ERP")
+            tk.Label(seletor, text=aviso, bg=COR_CAMPO, fg=COR_TEXTO_SUAVE,
+                     font=(FONTE, 9, "italic")).pack(anchor="w")
+            self._combos.append(None)
+            self._mapa_rotulo_proj.append({})
+
+    def _preselecionar_projeto(self, combo, cliente, projetos: list) -> None:
+        codigo = self._codigo_negocio(cliente.cliente_id_completo)
+        if codigo:
+            for p in projetos:
+                if self._codigo_negocio(p.titulo) == codigo:
+                    combo.set(p.rotulo())
+                    return
 
     @staticmethod
-    def _cortar(fonte: tkfont.Font, texto: str, largura_max: int) -> str:
-        if largura_max <= 0 or fonte.measure(texto) <= largura_max:
-            return texto
-        while texto and fonte.measure(texto + "…") > largura_max:
-            texto = texto[:-1]
-        return texto + "…"
+    def _codigo_negocio(texto: str) -> str:
+        achado = _RE_CODIGO_NEGOCIO.search(texto or "")
+        return achado.group(1) if achado else ""
 
     # ------------------------------------------------------------------
     # Acoes
@@ -397,7 +467,8 @@ class App(tk.Tk):
 
         self._ocupado = True
         self._clientes = []
-        self._render_placeholder_clientes("Procurando os clientes na agenda...")
+        self._placeholder_vazio = "Nenhum cliente encontrado para esta coordenadora/data."
+        self._render_placeholder_clientes("Verificando o banco e procurando os clientes...")
         self._btn_gerar.definir_habilitado(False)
         self._btn_buscar.definir_habilitado(False)
         self._btn_buscar.definir_texto("Procurando...")
@@ -407,6 +478,7 @@ class App(tk.Tk):
 
     def _buscar_em_thread(self, coordenadora: str, data: date) -> None:
         clientes: list = []
+        projetos_por_cliente: list = []
         try:
             from status_report.aplicacao.pipeline_coordenadora import (
                 buscar_clientes_para_status_report,
@@ -416,33 +488,122 @@ class App(tk.Tk):
                 construir_servicos_google,
             )
 
+            self._config = carregar_configuracoes()
+
+            # 1) O banco e a primeira coisa a verificar.
+            if not self._verificar_banco():
+                return
+
+            mapa_clientes = self._carregar_mapa_clientes()
+
             self._log(f"Procurando os status reports de {coordenadora} em "
                       f"{data.strftime('%d/%m/%Y')}...")
-
-            self._config = carregar_configuracoes()
             self._servicos = construir_servicos_google(self._config)
-
             clientes = buscar_clientes_para_status_report(
                 config=self._config, servicos=self._servicos,
                 nome_coordenadora=coordenadora, data_referencia=data, log_fn=self._log,
             )
+            clientes = self._resolver_nr_seq_cliente(clientes, mapa_clientes)
+            projetos_por_cliente = self._buscar_projetos(clientes)
         except Exception as e:
             self._log(f"Algo deu errado: {e}", "erro")
         finally:
-            self.after(0, lambda: self._apos_busca(clientes))
+            self.after(0, lambda: self._apos_busca(clientes, projetos_por_cliente))
 
-    def _apos_busca(self, clientes: list) -> None:
+    def _verificar_banco(self) -> bool:
+        """Testa a conexao com o Oracle antes de qualquer outra coisa."""
+        self._log("Verificando conexão com o banco de dados...", "info")
+        if self._config is None or not self._config.oracle_configurado():
+            self._log("Banco de dados não configurado (verifique ORACLE_* no .env).", "erro")
+            self._placeholder_vazio = "Banco de dados não configurado (ORACLE_* no .env)."
+            return False
+        from status_report.infraestrutura.repositorio_oracle import testar_conexao
+        try:
+            testar_conexao(self._config)
+        except Exception:
+            self._log("Não foi possível conectar ao banco de dados.", "erro")
+            self._log("Verifique se a conexão com a VPN está ativa e tente novamente.", "aviso")
+            self._placeholder_vazio = "Sem conexão com o banco de dados. Verifique a VPN."
+            return False
+        self._log("Banco de dados conectado.", "ok")
+        return True
+
+    def _carregar_mapa_clientes(self) -> dict:
+        from status_report.infraestrutura.repositorio_oracle import (
+            carregar_mapa_codigo_para_nr_seq,
+        )
+        try:
+            return carregar_mapa_codigo_para_nr_seq(self._config)
+        except Exception as e:
+            self._log(f"Falha ao carregar clientes do ERP: {e}", "aviso")
+            return {}
+
+    def _resolver_nr_seq_cliente(self, clientes: list, mapa: dict) -> list:
+        """Descobre o nr_seq_cliente no ERP pelo codigo do cliente (ou usa a coluna G)."""
+        resolvidos: list = []
+        for cliente in clientes:
+            nr_seq = cliente.nr_seq_cliente
+            if not nr_seq:
+                codigo = self._codigo_inicial(cliente.codigo_cliente) or \
+                    self._codigo_inicial(cliente.cliente_id_completo)
+                if codigo is not None and codigo in mapa:
+                    nr_seq = str(mapa[codigo])
+            if nr_seq and nr_seq != cliente.nr_seq_cliente:
+                cliente = replace(cliente, nr_seq_cliente=nr_seq)
+            resolvidos.append(cliente)
+        return resolvidos
+
+    @staticmethod
+    def _codigo_inicial(texto: str) -> int | None:
+        achado = re.match(r"\s*(\d+)", texto or "")
+        return int(achado.group(1)) if achado else None
+
+    def _buscar_projetos(self, clientes: list) -> list:
+        """Para cada cliente, lista os projetos ativos no Oracle."""
+        if not clientes:
+            return []
+        if self._config is None or not self._config.oracle_configurado():
+            self._log("Oracle não configurado — seleção de projeto indisponível.", "aviso")
+            return [[] for _ in clientes]
+
+        from status_report.infraestrutura.repositorio_oracle import (
+            listar_projetos_ativos_do_cliente,
+        )
+
+        self._log("Buscando projetos no ERP...", "info")
+        projetos_por_cliente: list = []
+        for cliente in clientes:
+            if not cliente.nr_seq_cliente:
+                self._log(f"  {cliente.nome_curto}: sem nr_seq_cliente na aba Clientes (coluna G).",
+                          "aviso")
+                projetos_por_cliente.append([])
+                continue
+            try:
+                projetos = listar_projetos_ativos_do_cliente(
+                    self._config, cliente.nr_seq_cliente
+                )
+                self._log(f"  {cliente.nome_curto}: {len(projetos)} projeto(s) ativo(s).")
+                projetos_por_cliente.append(projetos)
+            except Exception as e:
+                self._log(f"  {cliente.nome_curto}: falha ao buscar projetos ({e}).", "aviso")
+                projetos_por_cliente.append([])
+        return projetos_por_cliente
+
+    def _apos_busca(self, clientes: list, projetos_por_cliente: list) -> None:
         self._ocupado = False
         self._clientes = clientes
+        self._projetos_por_cliente = projetos_por_cliente
         self._btn_buscar.definir_habilitado(True)
         self._btn_buscar.definir_texto("Buscar clientes")
         if clientes:
-            self._render_clientes(clientes)
+            self._render_clientes(clientes, projetos_por_cliente)
             self._btn_gerar.definir_habilitado(True)
-            self._log("Confira os clientes acima e clique em “Gerar Status Reports”.", "info")
+            self._log("Escolha o projeto de cada cliente e clique em “Gerar Status Reports”.",
+                      "info")
         else:
             self._render_placeholder_clientes(
-                "Nenhum cliente encontrado para esta coordenadora/data."
+                getattr(self, "_placeholder_vazio",
+                        "Nenhum cliente encontrado para esta coordenadora/data.")
             )
             self._btn_gerar.definir_habilitado(False)
 
@@ -454,13 +615,33 @@ class App(tk.Tk):
         if data is None:
             return
 
+        clientes = self._clientes_com_projeto_escolhido()
+
         self._ocupado = True
         self._btn_gerar.definir_habilitado(False)
         self._btn_gerar.definir_texto("Gerando...")
         self._btn_buscar.definir_habilitado(False)
 
         threading.Thread(target=self._gerar_em_thread,
-                         args=(list(self._clientes), data), daemon=True).start()
+                         args=(clientes, data), daemon=True).start()
+
+    def _clientes_com_projeto_escolhido(self) -> list:
+        """Aplica em cada ClienteFila o projeto selecionado no combo (se houver)."""
+        clientes: list = []
+        for i, cliente in enumerate(self._clientes):
+            combo = self._combos[i] if i < len(self._combos) else None
+            projeto = None
+            if combo is not None:
+                projeto = self._mapa_rotulo_proj[i].get(combo.get())
+            if projeto is not None:
+                cliente = replace(
+                    cliente,
+                    nr_seq_proj=str(projeto.nr_seq_proj),
+                    nome_projeto=projeto.titulo,
+                    cliente_id_completo=projeto.titulo,
+                )
+            clientes.append(cliente)
+        return clientes
 
     def _gerar_em_thread(self, clientes: list, data: date) -> None:
         resultados: list = []
@@ -468,6 +649,9 @@ class App(tk.Tk):
             from status_report.aplicacao.pipeline_coordenadora import processar_clientes
 
             self._log(f"Gerando {len(clientes)} status report(s)...", "info")
+            for cliente in clientes:
+                if cliente.nome_projeto:
+                    self._log(f"  {cliente.nome_curto} → {cliente.nome_projeto}")
             resultados = processar_clientes(
                 config=self._config, servicos=self._servicos,
                 clientes=clientes, data_referencia=data, log_fn=self._log,

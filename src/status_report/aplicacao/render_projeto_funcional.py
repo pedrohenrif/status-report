@@ -69,10 +69,30 @@ def renderizar_tabelas_projeto_funcional(
     presentation_id: str,
     grupos: ProjetoFuncionalAgrupado,
     indices_slides: dict[str, int] | None = None,
+    slides_por_chave: dict[str, str] | None = None,
 ) -> None:
-    """Cria as 3 tabelas nos slides de Projeto Funcional."""
+    """Cria as 3 tabelas nos slides de Projeto Funcional.
+
+    ``slides_por_chave`` (chave -> objectId do slide) tem prioridade sobre
+    ``indices_slides`` e e o modo usado pela geracao por marcador.
+    """
     indices = indices_slides or INDICES_SLIDES
     slides_info = _obter_estrutura_slides(slides, presentation_id)
+    por_id = {info["objectId"]: info for info in slides_info}
+
+    def _info_do_slide(chave: str) -> dict:
+        if slides_por_chave and chave in slides_por_chave:
+            object_id = slides_por_chave[chave]
+            if object_id not in por_id:
+                raise KeyError(f"Slide '{object_id}' ({chave}) nao encontrado.")
+            return por_id[object_id]
+        indice = indices[chave]
+        if indice >= len(slides_info):
+            raise IndexError(
+                f"O template tem {len(slides_info)} slides, mas o slide de "
+                f"'{chave}' esperado e o indice {indice}."
+            )
+        return slides_info[indice]
 
     categorias = [
         ("concluidos", grupos.concluidos, COR_VERDE),
@@ -82,13 +102,7 @@ def renderizar_tabelas_projeto_funcional(
 
     plantas: list[PlantaTabela] = []
     for chave, itens, cor in categorias:
-        indice = indices[chave]
-        if indice >= len(slides_info):
-            raise IndexError(
-                f"O template tem {len(slides_info)} slides, mas o slide de "
-                f"'{chave}' esperado e o indice {indice}."
-            )
-        info = slides_info[indice]
+        info = _info_do_slide(chave)
         plantas.append(
             PlantaTabela(
                 table_object_id=f"tbl_pf_{chave}",

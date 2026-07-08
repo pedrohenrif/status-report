@@ -20,6 +20,7 @@ class CadastroCliente:
     nome_curto: str
     cliente_id_completo: str
     nome_pdf_customizado: str = ""
+    nr_seq_cliente: str = ""
 
 
 def carregar_cadastro_clientes(
@@ -57,11 +58,13 @@ def cliente_da_linha(linha: list[str]) -> CadastroCliente | None:
         return None
     cliente_id_completo = _celula(linha, 2) or nome_curto
     nome_pdf = _celula(linha, 3)
+    nr_seq_cliente = _normalizar_codigo(_celula(linha, 6))
     return CadastroCliente(
         codigo_cliente=codigo,
         nome_curto=nome_curto,
         cliente_id_completo=cliente_id_completo,
         nome_pdf_customizado=nome_pdf,
+        nr_seq_cliente=nr_seq_cliente,
     )
 
 

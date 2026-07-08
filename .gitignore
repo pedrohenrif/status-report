@@ -4,3 +4,4 @@ __pycache__/
 .env
 credentials/
 video_frames/
+instantclient*/

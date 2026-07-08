@@ -4,14 +4,13 @@ Fluxo:
 1. Le a aba Coord_Status_Report (somente dados da coordenadora).
 2. Le o calendario da coordenadora no dia e filtra eventos de Status Report.
 3. Cruza os eventos com a aba Clientes pelo codigo numerico.
-4. Usa o titulo do evento como fonte do ID completo na capa do slide.
+4. O projeto (e o ID exibido na capa) vem da selecao na GUI, nao do evento.
 """
 from __future__ import annotations
 
 from status_report.configuracao import Configuracoes
 from status_report.dominio.modelos import ClienteFila
 from status_report.infraestrutura.repositorio_calendario import (
-    extrair_cliente_id_do_evento,
     extrair_codigo_cliente,
 )
 from status_report.infraestrutura.repositorio_clientes import (
@@ -92,17 +91,18 @@ def montar_clientes_dos_eventos(
         if registro is None:
             continue
 
-        cliente_id_evento = extrair_cliente_id_do_evento(titulo)
-        cliente_id_completo = cliente_id_evento or registro.cliente_id_completo
-
+        # A agenda identifica apenas o cliente; o projeto (e o ID da capa) vem
+        # da selecao feita na GUI. Aqui usamos o cadastro como valor inicial.
         resultado.append(
             ClienteFila(
                 nome_curto=registro.nome_curto,
-                cliente_id_completo=cliente_id_completo,
+                cliente_id_completo=registro.cliente_id_completo,
                 coordenadora=nome_coordenadora,
                 spreadsheet_origem_id=configuracoes.id_planilha_principal,
                 nome_pdf_customizado=registro.nome_pdf_customizado,
                 email_coordenadora=email_coordenadora,
+                codigo_cliente=registro.codigo_cliente,
+                nr_seq_cliente=registro.nr_seq_cliente,
             )
         )
 

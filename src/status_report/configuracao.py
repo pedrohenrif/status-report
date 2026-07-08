@@ -29,11 +29,29 @@ class Configuracoes:
     modo_simulacao: bool
     salvar_download_local: bool
     pasta_download_local: str
+    oracle_usuario: str
+    oracle_senha: str
+    oracle_host: str
+    oracle_porta: int
+    oracle_service_name: str
+    oracle_client_lib_dir: str
+    oracle_schema: str
 
     def pasta_download_local_resolvida(self) -> Path:
         if self.pasta_download_local:
             return Path(self.pasta_download_local).expanduser()
         return Path.home() / "Downloads" / "Status Report GHR"
+
+    def oracle_configurado(self) -> bool:
+        return bool(
+            self.oracle_host
+            and self.oracle_service_name
+            and self.oracle_usuario
+            and self.oracle_senha
+        )
+
+    def oracle_dsn(self) -> str:
+        return f"{self.oracle_host}:{self.oracle_porta}/{self.oracle_service_name}"
 
     def validar(self) -> None:
         caminho = Path(self.arquivo_service_account)
@@ -57,7 +75,7 @@ def carregar_configuracoes() -> Configuracoes:
             os.getenv("GOOGLE_CLIENT_QUEUE_RANGE", "Coord_Status_Report!A2:C"),
         ),
         intervalo_cadastro_clientes=os.getenv(
-            "GOOGLE_CLIENTS_RANGE", "Clientes!A2:F"
+            "GOOGLE_CLIENTS_RANGE", "Clientes!A2:G"
         ),
         intervalo_dados_relatorio=os.getenv(
             "GOOGLE_DATA_RANGE", "Agenda da Semana!A1:G200"
@@ -70,6 +88,13 @@ def carregar_configuracoes() -> Configuracoes:
         modo_simulacao=_para_bool(os.getenv("DRY_RUN", "false")),
         salvar_download_local=_para_bool(os.getenv("SAVE_LOCAL_DOWNLOAD", "true")),
         pasta_download_local=os.getenv("LOCAL_DOWNLOAD_FOLDER", "").strip(),
+        oracle_usuario=os.getenv("ORACLE_USER", "").strip(),
+        oracle_senha=os.getenv("ORACLE_PASSWORD", ""),
+        oracle_host=os.getenv("ORACLE_HOST", "").strip(),
+        oracle_porta=_para_int(os.getenv("ORACLE_PORT", "1521"), 1521),
+        oracle_service_name=os.getenv("ORACLE_SERVICE_NAME", "").strip(),
+        oracle_client_lib_dir=os.getenv("ORACLE_CLIENT_LIB_DIR", "").strip(),
+        oracle_schema=os.getenv("ORACLE_SCHEMA", "").strip(),
     )
 
 
@@ -82,3 +107,10 @@ def _obrigatoria(chave: str) -> str:
 
 def _para_bool(bruto: str) -> bool:
     return bruto.strip().lower() in {"1", "true", "yes", "y", "sim"}
+
+
+def _para_int(bruto: str, padrao: int) -> int:
+    try:
+        return int(str(bruto).strip())
+    except (TypeError, ValueError):
+        return padrao

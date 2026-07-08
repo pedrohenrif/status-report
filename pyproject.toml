@@ -15,7 +15,8 @@ dependencies = [
     "pydantic (>=2.13.3,<3.0.0)",
     "python-dotenv (>=1.2.2,<2.0.0)",
     "tzdata (>=2026.2,<2027.0)",
-    "openpyxl (>=3.1.5,<4.0.0)"
+    "openpyxl (>=3.1.5,<4.0.0)",
+    "oracledb (>=4.0.1,<5.0.0)"
 ]
 
 [project.scripts]
